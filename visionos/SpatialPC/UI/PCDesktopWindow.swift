@@ -14,7 +14,7 @@ struct PCDesktopWindow: View {
         DesktopMetalSurface(renderer:model.renderer,aspect:aspect)
             .frame(minWidth:480,minHeight:480/aspect)
             .ignoresSafeArea()
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
             .overlay(alignment:.topLeading) { DesktopNavigationButton(model:model,action:.back).padding(12) }
             .overlay(alignment:.topTrailing) { DesktopNavigationButton(model:model,action:.focus).padding(12) }
             .task {
@@ -48,7 +48,7 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     static func dismantleUIView(_ view:DesktopMetalView,coordinator:()) { view.isPaused = true; view.delegate = nil }
 }
 
-@MainActor private final class DesktopMetalView: MTKView, MTKViewDelegate {
+@MainActor private final class DesktopMetalView: MTKView, MTKViewDelegate, UIPointerInteractionDelegate {
     private let renderer: SyntheticRenderer
     private var pipeline: MTLRenderPipelineState?
     private var aspect: CGFloat
@@ -64,6 +64,8 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         clearColor = MTLClearColorMake(0,0,0,1)
         isOpaque = true; preferredFramesPerSecond = 60
         autoResizeDrawable = true; delegate = self
+        isUserInteractionEnabled = true
+        addInteraction(UIPointerInteraction(delegate:self))
         do {
             guard let device, let library = device.makeDefaultLibrary() else { return }
             let descriptor = MTLRenderPipelineDescriptor()
@@ -91,6 +93,14 @@ private struct DesktopMetalSurface: UIViewRepresentable {
             minimumSize:CGSize(width:480,height:480/aspect),resizingRestrictions:.uniform)) { [weak self] error in
                 Task { @MainActor in self?.renderer.reportWindowError("Could not match the desktop window size: \(error)") }
             }
+    }
+    func pointerInteraction(_ interaction:UIPointerInteraction, regionFor request:UIPointerRegionRequest,
+                            defaultRegion:UIPointerRegion) -> UIPointerRegion? {
+        // The decoded image is a pointer surface, not just its overlaid buttons.
+        UIPointerRegion(rect:bounds,identifier:"desktop" as NSString)
+    }
+    func pointerInteraction(_ interaction:UIPointerInteraction, styleFor region:UIPointerRegion) -> UIPointerStyle? {
+        .system()
     }
     func mtkView(_ view:MTKView,drawableSizeWillChange size:CGSize) { submittedFrame = nil }
     func draw(in view:MTKView) {
