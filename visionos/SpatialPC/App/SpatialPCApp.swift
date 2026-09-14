@@ -19,6 +19,6 @@ struct SpatialPCApp: App {
         ImmersiveSpace(id: "workspace") {
             SpatialSurface(model: model)
         }
-        .immersionStyle(selection: .constant(.progressive), in: .progressive)
+        .immersionStyle(selection: .constant(.progressive(0...1, initialAmount:0.5)), in: .progressive)
     }
 }

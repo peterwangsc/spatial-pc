@@ -1,5 +1,7 @@
 # Client performance validation
 
+This report records the earlier BGRA client baseline. See [native video surfaces](client-native-video-20260913.md) and [Focus window behavior](focus-environment.md) for the later NV12 implementation and physical validation.
+
 Use `Lab` for an optimized development streaming build (`-O` plus lab enrollment). `Debug` uses `-Onone`; `Release` excludes the unfinished development connection flow. Never publish a Lab build as a consumer release.
 
 The window samples the decoder's Metal-compatible BGRA IOSurface directly. A single latest decoded image replaces the previous image; submitted GPU work retains its Core Video image and texture until completion. Focus mode copies into a RealityKit LowLevelTexture, with one copy in flight and the newest decoded frame waiting. Session generations prevent old copy completions from mutating a new session. Encoded frames are still decoded in order, including reference frames.

@@ -22,6 +22,13 @@ struct PCDesktopWindow: View {
                 if !model.startupHandled { openWindow(id:"controls") }
                 await model.renderer.ensureStarted()
             }
+            .onDisappear {
+                // Closing the desktop must not leave an empty immersive environment.
+                guard model.destination == .focus else { return }
+                Task { @MainActor in
+                    if model.isImmersed { await closeSpace() }
+                }
+            }
             .onChange(of:scenePhase,initial:true) { _, phase in
                 guard phase == .active, model.destination == .desktop else { return }
                 Task { @MainActor in
