@@ -53,6 +53,8 @@ No ordinary desktop screenshots or video were retained, and no pointer or keyboa
 
 Build 14 added two recovery fixes after this Windows phase. With synthetic loopback video, the corner controls now become visible immediately after a live stream disconnects; previously the visibility condition inside the hover callback could stay stale. An authenticated host advertising unsupported stream version 2 now produces a specific incompatible-stream message and stops automatic retry with zero decoded frames. No Windows capture was used for these checks.
 
+Build 16 replaces the Settings confirmation toolbar button with a standard Close action and Escape shortcut. In the simulator, the prior Done control did not receive pointer activation; the Close control dismisses correctly. The temporary action diagnostic used to distinguish hit testing from dismissal state was removed before this build. Physical confirmation remains part of the consumer-build regression.
+
 ## Release scope and remaining gates
 
 The demonstrated MVP has encrypted single-display streaming, pointer/keyboard input, a window beside other visionOS windows, and adjustable Focus immersion. Audio, clipboard transfer, WAN access, file transfer, multiple monitors and a headless virtual Windows monitor are outside this release scope. Capture still requires a logged-in interactive Windows session and a supported hardware H.264 encoder.

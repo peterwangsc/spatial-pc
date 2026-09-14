@@ -134,7 +134,12 @@ struct ControlCenter: View {
                     Text("If Space and Tab navigate app controls, turn off Full Keyboard Access in visionOS Settings → Accessibility → Keyboards while using the remote desktop.")
                 }
             }.navigationTitle("Settings")
-                .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { settingsOpen = false } } }
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction) {
+                        Button("Close",systemImage:"xmark") { settingsOpen = false }
+                            .labelStyle(.iconOnly).keyboardShortcut(.cancelAction)
+                    }
+                }
         }.frame(width:640,height:640)
     }
     private func showDesktop() {
