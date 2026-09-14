@@ -15,7 +15,7 @@ class PairingServer:
         self.stopped=asyncio.Event();self.ready=asyncio.Event();self.approval=None;self.task=None
 
     async def run(self):
-        listener=asyncio.create_task(listen(self.address,self.port,self.identity.tls_context(pairing=True),self.session,self.stopped,self.ready))
+        listener=asyncio.create_task(listen(self.address,self.port,self.identity.tls_context(pairing=True),self.session,self.stopped,self.ready,self.handshake_failed))
         timer=asyncio.create_task(asyncio.sleep(max(0,self.window.expires-time.monotonic())))
         stopper=asyncio.create_task(self.stopped.wait())
         try:
@@ -31,6 +31,10 @@ class PairingServer:
     def stop(self):
         self.window.close();self.stopped.set()
         if self.approval and not self.approval.done():self.approval.set_result(False)
+
+    def handshake_failed(self):
+        self.window.failed_attempt()
+        if not self.window.is_open():self.stop()
 
     def approve(self, request_id, accepted):
         if self.approval and not self.approval.done() and self.window.can_commit(request_id):

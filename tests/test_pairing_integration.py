@@ -78,6 +78,16 @@ class PairingIntegration(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.task,3)
         self.assertFalse(self.server.window.is_open());self.assertEqual(self.identity.state['devices'],[])
 
+    async def test_malformed_tls_handshakes_exhaust_window(self):
+        for _ in range(5):
+            reader,writer=await asyncio.open_connection(self.server.address,self.server.port)
+            writer.write(b'not a TLS client hello\r\n');await writer.drain()
+            try:await asyncio.wait_for(reader.read(),2)
+            except OSError:pass
+            await self.close(writer)
+        await asyncio.wait_for(self.task,3)
+        self.assertFalse(self.server.window.is_open());self.assertEqual(self.identity.state['devices'],[])
+
     async def test_disconnect_after_proof_cancels_approval_and_consumes_code(self):
         reader,writer,_,_,_=await self.client();await read_record(reader)
         request_id=self.server.window.request_id

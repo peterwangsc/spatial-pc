@@ -25,7 +25,8 @@ class Worker:
 
     def status(self):
         self.notify(dict(event='status',enabled=self.enabled,connected=self.connected,message=self.message,
-            needsNetwork=self.address is None,devices=[{k:d[k] for k in ('id','name','pairedAt')} for d in self.identity.state['devices']]))
+            needsNetwork=self.address is None,preferredAddress=self.identity.state.get('bindAddress'),
+            devices=[{k:d[k] for k in ('id','name','pairedAt')} for d in self.identity.state['devices']]))
 
     def event(self,value):
         kind=value['event']

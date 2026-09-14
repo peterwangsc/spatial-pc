@@ -6,7 +6,7 @@ from zeroconf.asyncio import AsyncZeroconf
 class Discovery:
     def __init__(self,identity,address,stream_port,pair_port):
         self.identity=identity;self.address=address;self.stream_port=stream_port;self.pair_port=pair_port
-        self.zeroconf=None;self.info=None
+        self.zeroconf=None;self.info=None;self.pair_info=None
 
     async def start(self):
         self.zeroconf=AsyncZeroconf(interfaces=[self.address],ip_version=IPVersion.V4Only)
@@ -19,6 +19,16 @@ class Discovery:
 
     async def pairing(self,enabled):
         if not self.info:return
+        if enabled and self.pair_info is None:
+            self.pair_info=ServiceInfo('_spatialpc-pair._tcp.local.',
+                self.info.name.replace('._spatialpc._tcp.local.','._spatialpc-pair._tcp.local.'),
+                addresses=self.info.addresses,port=self.pair_port,
+                properties={'version':'1','hostId':self.identity.state['hostId']},server=self.info.server)
+            try:await self.zeroconf.async_register_service(self.pair_info)
+            except BaseException:self.pair_info=None;raise
+        elif not enabled and self.pair_info is not None:
+            info=self.pair_info;self.pair_info=None
+            await self.zeroconf.async_unregister_service(info)
         self.info=ServiceInfo(self.info.type,self.info.name,addresses=self.info.addresses,port=self.info.port,
             properties={'version':'1','hostId':self.identity.state['hostId'],'pairPort':str(self.pair_port),'pairing':'1' if enabled else '0'},server=self.info.server)
         await self.zeroconf.async_update_service(self.info)
@@ -26,4 +36,4 @@ class Discovery:
     async def close(self):
         if self.zeroconf:
             try:await self.zeroconf.async_unregister_all_services()
-            finally:await self.zeroconf.async_close();self.zeroconf=None
+            finally:await self.zeroconf.async_close();self.zeroconf=None;self.info=None;self.pair_info=None

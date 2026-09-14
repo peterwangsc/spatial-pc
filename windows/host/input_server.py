@@ -8,7 +8,7 @@ import struct
 import subprocess
 import time
 from input_protocol import CAPABILITY, EventQueue, Gate, decode, text_negotiated
-from lab_server import MAX_MESSAGE, TransportStats, context_for
+from transport_metrics import MAX_MESSAGE, TransportStats
 
 
 async def hello(reader):
@@ -185,6 +185,7 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
 
 
 async def serve_async(directory, capture_path, bridge_path, bind, lifetime):
+    from lab_server import context_for  # Development-only entry point; not in the consumer package.
     policy = json.loads((directory/'server-policy.json').read_text())
     context = context_for(directory)
     loop = asyncio.get_running_loop()

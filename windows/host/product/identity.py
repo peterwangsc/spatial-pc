@@ -57,7 +57,7 @@ class Identity:
             ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Spatial PC '+host_id)])
             server_name = 'spatialpc-'+host_id+'.local'
             ca = issue_certificate(ca_key.public_key(), 'Spatial PC '+host_id, ca_name, ca_key, 3650)
-            server = issue_certificate(server_key.public_key(), 'Spatial PC host', ca_name, ca_key, 1825,
+            server = issue_certificate(server_key.public_key(), 'Spatial PC host', ca_name, ca_key, 365,
                                        ExtendedKeyUsageOID.SERVER_AUTH, server_name)
             self.state = dict(version=1, hostId=host_id, serverName=server_name, caKey=private_pem(ca_key),
                 serverKey=private_pem(server_key), caCertificate=ca.public_bytes(PEM).decode('ascii'),

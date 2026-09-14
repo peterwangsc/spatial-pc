@@ -1,0 +1,72 @@
+# Windows host release candidate
+
+The consumer Windows host is under review. Public download is gated on publisher
+signing, clean-machine installation and Windows-to-visionOS release integration.
+The source build is not a signed public installer.
+
+## Setup and lifecycle
+
+Windows 11 x64, one active physical display, a supported hardware H.264 encoder,
+and a Private LAN shared with Vision Pro are required. The demonstrated hardware
+is an NVIDIA RTX 4070; this is not an all-GPU compatibility claim. Windows Forms
+uses the .NET Framework 4.8 family included with Windows 11. Python and its pinned
+dependencies are bundled privately; no Python or developer tools are installed
+globally.
+
+Install per user, open Spatial PC, select your Private network, then choose
+**Set up network**. The administrator prompt permits only this installation's
+runtime on TCP47990/47991 and UDP5353, Private profile, LocalSubnet, with no edge
+traversal. It does not change your network category or enable/disable Windows
+Firewall. Enterprise firewall policy can still prohibit connections.
+
+Choose **Enable access**, then **Pair a new device**. Enter the displayed one-time
+code on Vision Pro and approve the named request on this PC. The code expires
+after three minutes and at most five failed attempts; local approval cannot
+extend that window. Client private keys remain on Vision Pro. Repeat connections
+use mutual TLS and exact certificate pins. See [pairing-v1.md](pairing-v1.md).
+
+Access always starts disabled. The selected network and paired identities persist
+under the current Windows user's DPAPI protection. Closing the window leaves the
+tray application running; **Disable access** or **Quit** stops sharing and releases
+input. Startup at sign-in is opt-in and does not enable sharing automatically.
+Changing away from the selected Private network disables access. Revoking the
+connected device immediately ends its session, releases held input and rejects
+its next connection before desktop capture starts.
+
+Sessions retain the tested ten-minute maximum and two-second input lease. The
+client reconnects using its saved identity; this may cause a brief interruption at
+the session limit. Physical Space and Tab require visionOS Full Keyboard Access
+to be off. Audio, clipboard, additional virtual displays and internet relay are
+outside this MVP.
+
+Update and uninstall ask only this user's Spatial PC UI to quit, then wait for
+bounded cleanup. Uninstall removes this installation's firewall rules (with
+administrator permission if configured) and its own sign-in entry. Protected
+pairing data is retained for reinstall; installation does not silently rotate an
+identity or import lab credentials. Removing a saved PC on Vision Pro and revoking
+it on Windows is the supported way to end that device's access.
+
+## Build and distribution gates
+
+`windows/package/build-bundle.ps1` builds the Windows UI and native binaries and
+assembles official Python3.14.7 with hash-pinned wheels. Supply the official x64
+embedded runtime archive, pinned wheelhouse, a build-only Python with pip, and the
+matching zeroconf source archive. The script validates archive hashes, uses only
+local hashed wheels and writes a file/hash manifest. The LGPL component remains
+replaceable, with corresponding source and notices included.
+
+`windows/package/build-installer.ps1` verifies all manifest files and rejects extra
+files before compiling Inno Setup6.7.3. The current output is explicitly named
+`unsigned-test`. Never publish it as ready. The bundle excludes lab provisioning,
+test fixtures, certificates, private keys, captured media and developer runtimes.
+
+Release requires a clean reviewed source commit, valid Authenticode signatures
+from the verified publisher for Spatial PC executables and installer, trusted
+timestamping, exact artifact hash/size, a clean Windows11 install/upgrade/uninstall
+test without developer tools, and authenticated consumer pairing/reconnect/input
+integration with the release visionOS client. Do not bypass certificate checks or
+describe a self-signed certificate as public publisher trust.
+
+No Windows code-signing identity or clean Windows VM is available in the current
+development environment. Local install/reinstall/uninstall testing is useful but
+does not substitute for that clean-machine gate. No installer has been uploaded.

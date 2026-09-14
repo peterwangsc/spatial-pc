@@ -4,7 +4,7 @@ import os
 import socket
 
 
-async def listen(address, port, context, session, stopped, ready=None):
+async def listen(address, port, context, session, stopped, ready=None, handshake_failed=None):
     loop=asyncio.get_running_loop()
     with socket.socket() as listener:
         listener.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE if os.name=='nt' else socket.SO_REUSEADDR,1)
@@ -24,7 +24,8 @@ async def listen(address, port, context, session, stopped, ready=None):
                 writer=asyncio.StreamWriter(transport,protocol,reader,loop)
                 await session(reader,writer)
             except (OSError,ValueError,EOFError,asyncio.IncompleteReadError,asyncio.TimeoutError):
-                pass  # Static UI state is emitted by the session owner; no peer payload logs.
+                if writer is None and handshake_failed:handshake_failed()
+                # Static UI state only; never retain peer payloads.
             finally:
                 if writer:
                     writer.transport.abort()

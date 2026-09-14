@@ -17,6 +17,7 @@ class IdentityTests(unittest.TestCase):
             identity=Identity(Path(root)/'state')
             self.assertNotIn(b'PRIVATE KEY',identity.path.read_bytes())
             self.assertFalse(identity.state['accessEnabled'])
+            self.assertLess((identity.server.not_valid_after_utc-identity.server.not_valid_before_utc).total_seconds(),366*86400)
             device=identity.enroll(ec.generate_private_key(ec.SECP256R1()).public_key(),'Test headset')
             again=Identity(identity.directory)
             self.assertEqual(identity.server.fingerprint(hashes.SHA256()),again.server.fingerprint(hashes.SHA256()))
