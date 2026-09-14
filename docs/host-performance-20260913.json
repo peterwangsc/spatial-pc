@@ -1,0 +1,557 @@
+{
+  "date": "2026-09-13",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4070",
+    "driver": "566.14",
+    "dedicated_video_bytes": 12595494912,
+    "cpu": "Intel Core i9-13900KF",
+    "logical_processors": 32,
+    "os": "Windows 11 Home 10.0.26200"
+  },
+  "workload": {
+    "resolution": [
+      1920,
+      1080
+    ],
+    "display_hz": 144.001,
+    "target_fps": 60,
+    "configured_bitrate": 20000000,
+    "description": "D3D11 procedural moving checkerboard and bars, vblank-paced source at display refresh; first 3 s static pixels with presents continuing; encoded bytes discarded",
+    "steady_fps_excludes_first_seconds": 4,
+    "note": "Single sequential runs. Local pipe, not AVP or photon latency."
+  },
+  "binaries": {
+    "original": {
+      "sha256": "5042957d22fb027704c7b032f6d68cf8c8ca12d85b2cdf1c0b982199d8d9ff02"
+    },
+    "measured_candidate_v2": {
+      "sha256": "4122f17eb5d9d0234d8748c60df65b6ee1817426bfda2f3b923abfce540b1388"
+    },
+    "final_candidate": {
+      "sha256": "16e4756b895eae8eaa818e77b99a4a7a0e8b7f764655906a12096b25853ac69c"
+    }
+  },
+  "runs": {
+    "original": {
+      "pipe": {
+        "label": "v2_original",
+        "capabilities": {
+          "version": 1,
+          "codec": "h264-annexb",
+          "width": 1920,
+          "height": 1080,
+          "fps": 60,
+          "hardwareEncoder": true
+        },
+        "frames": 1184,
+        "first_frame_s": 0.2517223999966518,
+        "steady_fps": 59.91550550302285,
+        "pipe_arrival_interval_ms": {
+          "n": 1183,
+          "p50": 15.844999994442333,
+          "p95": 34.76270000101067,
+          "p99": 41.38750000129221
+        },
+        "sample_interval_ms": {
+          "n": 1183,
+          "p50": 15.8532,
+          "p95": 31.1428,
+          "p99": 32.7443
+        },
+        "encoded_bytes": 44522956,
+        "last_frame_s": 20.000239999993937,
+        "h264_slice_types": {
+          "2": 20,
+          "0": 1164
+        }
+      }
+    },
+    "legacy_release": {
+      "pipe": {
+        "label": "v2_legacy_release",
+        "capabilities": {
+          "version": 1,
+          "codec": "h264-annexb",
+          "width": 1920,
+          "height": 1080,
+          "fps": 60,
+          "hardwareEncoder": true
+        },
+        "frames": 1081,
+        "first_frame_s": 0.296471500005282,
+        "steady_fps": 60.00889222676312,
+        "pipe_arrival_interval_ms": {
+          "n": 1080,
+          "p50": 15.881100000115111,
+          "p95": 31.914599996525794,
+          "p99": 37.38199999497738
+        },
+        "sample_interval_ms": {
+          "n": 1080,
+          "p50": 15.859,
+          "p95": 31.1732,
+          "p99": 33.6204
+        },
+        "encoded_bytes": 40074063,
+        "last_frame_s": 18.30444559999887,
+        "h264_slice_types": {
+          "2": 19,
+          "0": 1062
+        }
+      },
+      "native": {
+        "elapsed_s": 18.2832,
+        "inputs": 1081,
+        "outputs": 1081,
+        "cpu_core_percent": 5.8113,
+        "encoded_fps": 59.1252,
+        "encoded_bytes": 40074063,
+        "pending": 0,
+        "peak_pending": 3,
+        "dxgi_coalesced": 1537,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1081,
+            "p50": 4.9187,
+            "p95": 11.2992,
+            "p99": 13.3701,
+            "max": 20.8346
+          },
+          "capture_wait_ms": {
+            "n": 1081,
+            "p50": 0.0692,
+            "p95": 4.0283,
+            "p99": 6.899,
+            "max": 12.2416
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1081,
+            "p50": 0.5586,
+            "p95": 1.2697,
+            "p99": 1.6913,
+            "max": 2.3962
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1081,
+            "p50": 0.2294,
+            "p95": 1.0281,
+            "p99": 3.582,
+            "max": 7.1209
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1081,
+            "p50": 1.474,
+            "p95": 6.6718,
+            "p99": 7.1068,
+            "max": 7.5405
+          },
+          "encoded_interval_ms": {
+            "n": 1080,
+            "p50": 15.8753,
+            "p95": 32.0462,
+            "p99": 37.4171,
+            "max": 49.4872
+          },
+          "pacing_wait_ms": {
+            "n": 1081,
+            "p50": 14.724,
+            "p95": 29.5168,
+            "p99": 31.2033,
+            "max": 43.8985
+          },
+          "pipe_write_ms": {
+            "n": 1081,
+            "p50": 0.0834,
+            "p95": 0.1603,
+            "p99": 0.2149,
+            "max": 0.413
+          },
+          "submit_to_encoded_ms": {
+            "n": 1081,
+            "p50": 4.1246,
+            "p95": 10.8228,
+            "p99": 12.8761,
+            "max": 19.5338
+          },
+          "surface_acquire_ms": {
+            "n": 1081,
+            "p50": 0.3557,
+            "p95": 0.8079,
+            "p99": 1.065,
+            "max": 1.4773
+          },
+          "write_sample_ms": {
+            "n": 1081,
+            "p50": 0.0195,
+            "p95": 0.0608,
+            "p99": 0.1413,
+            "max": 0.502
+          }
+        }
+      }
+    },
+    "no_pool": {
+      "pipe": {
+        "label": "v2_no_pool",
+        "capabilities": {
+          "version": 1,
+          "codec": "h264-annexb",
+          "width": 1920,
+          "height": 1080,
+          "fps": 60,
+          "hardwareEncoder": true
+        },
+        "frames": 1081,
+        "first_frame_s": 0.2572832000005292,
+        "steady_fps": 59.98825956091636,
+        "pipe_arrival_interval_ms": {
+          "n": 1080,
+          "p50": 16.67549999547191,
+          "p95": 19.459100003587082,
+          "p99": 21.20920000015758
+        },
+        "sample_interval_ms": {
+          "n": 1080,
+          "p50": 16.6518,
+          "p95": 17.2385,
+          "p99": 17.5154
+        },
+        "encoded_bytes": 40263359,
+        "last_frame_s": 18.260400999999547,
+        "h264_slice_types": {
+          "2": 19,
+          "0": 1062
+        }
+      },
+      "native": {
+        "elapsed_s": 18.2417,
+        "inputs": 1081,
+        "outputs": 1081,
+        "cpu_core_percent": 13.1053,
+        "encoded_fps": 59.2598,
+        "encoded_bytes": 40263359,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1530,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1081,
+            "p50": 4.1706,
+            "p95": 8.9262,
+            "p99": 11.1123,
+            "max": 13.1009
+          },
+          "capacity_wait_ms": {
+            "n": 1081,
+            "p50": 0.0005,
+            "p95": 0.0008,
+            "p99": 0.0009,
+            "max": 0.0018
+          },
+          "capture_wait_ms": {
+            "n": 1081,
+            "p50": 0.0531,
+            "p95": 0.1485,
+            "p99": 0.2258,
+            "max": 0.4362
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1081,
+            "p50": 0.4509,
+            "p95": 1.0175,
+            "p99": 1.3823,
+            "max": 2.993
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1081,
+            "p50": 0.212,
+            "p95": 1.8371,
+            "p99": 3.7714,
+            "max": 5.9597
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1081,
+            "p50": 2.972,
+            "p95": 6.1036,
+            "p99": 7.115,
+            "max": 8.9783
+          },
+          "encoded_interval_ms": {
+            "n": 1080,
+            "p50": 16.6729,
+            "p95": 19.5202,
+            "p99": 21.2503,
+            "max": 23.3028
+          },
+          "pacing_wait_ms": {
+            "n": 1081,
+            "p50": 15.702,
+            "p95": 16.3193,
+            "p99": 16.5383,
+            "max": 16.761
+          },
+          "pipe_write_ms": {
+            "n": 1081,
+            "p50": 0.088,
+            "p95": 0.1571,
+            "p99": 0.2297,
+            "max": 0.3137
+          },
+          "submit_to_encoded_ms": {
+            "n": 1081,
+            "p50": 3.6733,
+            "p95": 8.5309,
+            "p99": 10.6199,
+            "max": 12.8068
+          },
+          "surface_acquire_ms": {
+            "n": 1081,
+            "p50": 0.2834,
+            "p95": 0.5925,
+            "p99": 0.8189,
+            "max": 1.1825
+          },
+          "write_sample_ms": {
+            "n": 1081,
+            "p50": 0.017,
+            "p95": 0.0576,
+            "p99": 0.1578,
+            "max": 0.2572
+          }
+        }
+      }
+    },
+    "optimized": {
+      "pipe": {
+        "label": "v2_optimized",
+        "capabilities": {
+          "version": 1,
+          "codec": "h264-annexb",
+          "width": 1920,
+          "height": 1080,
+          "fps": 60,
+          "hardwareEncoder": true
+        },
+        "frames": 1081,
+        "first_frame_s": 0.2585748000055901,
+        "steady_fps": 59.993455871710694,
+        "pipe_arrival_interval_ms": {
+          "n": 1080,
+          "p50": 16.681199995218776,
+          "p95": 20.212900002661627,
+          "p99": 22.431600002164487
+        },
+        "sample_interval_ms": {
+          "n": 1080,
+          "p50": 16.6548,
+          "p95": 17.0559,
+          "p99": 17.2603
+        },
+        "encoded_bytes": 39715221,
+        "last_frame_s": 18.260075800004415,
+        "h264_slice_types": {
+          "2": 19,
+          "0": 1062
+        }
+      },
+      "native": {
+        "elapsed_s": 18.2383,
+        "inputs": 1081,
+        "outputs": 1081,
+        "cpu_core_percent": 12.251,
+        "encoded_fps": 59.2709,
+        "encoded_bytes": 39715221,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1529,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1081,
+            "p50": 6.2498,
+            "p95": 10.2454,
+            "p99": 12.1037,
+            "max": 14.2659
+          },
+          "capacity_wait_ms": {
+            "n": 1081,
+            "p50": 0.0005,
+            "p95": 0.0008,
+            "p99": 0.001,
+            "max": 0.004
+          },
+          "capture_wait_ms": {
+            "n": 1081,
+            "p50": 0.0577,
+            "p95": 0.1861,
+            "p99": 0.307,
+            "max": 0.3925
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1081,
+            "p50": 0.4627,
+            "p95": 1.0723,
+            "p99": 1.523,
+            "max": 2.6613
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1081,
+            "p50": 0.2601,
+            "p95": 0.4805,
+            "p99": 1.2986,
+            "max": 3.7734
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1081,
+            "p50": 3.5674,
+            "p95": 6.8147,
+            "p99": 7.0357,
+            "max": 10.4439
+          },
+          "encoded_interval_ms": {
+            "n": 1080,
+            "p50": 16.6951,
+            "p95": 20.2748,
+            "p99": 22.3581,
+            "max": 24.664
+          },
+          "pacing_wait_ms": {
+            "n": 1081,
+            "p50": 16.0203,
+            "p95": 16.5676,
+            "p99": 16.7069,
+            "max": 16.8502
+          },
+          "pipe_write_ms": {
+            "n": 1081,
+            "p50": 0.0855,
+            "p95": 0.1694,
+            "p99": 0.2466,
+            "max": 0.4918
+          },
+          "submit_to_encoded_ms": {
+            "n": 1081,
+            "p50": 5.7951,
+            "p95": 9.5911,
+            "p99": 11.5848,
+            "max": 13.7689
+          },
+          "surface_acquire_ms": {
+            "n": 1081,
+            "p50": 0.013,
+            "p95": 0.0247,
+            "p99": 0.0675,
+            "max": 0.2858
+          },
+          "write_sample_ms": {
+            "n": 1081,
+            "p50": 0.018,
+            "p95": 0.0662,
+            "p99": 0.1513,
+            "max": 0.2872
+          }
+        }
+      }
+    }
+  },
+  "loopback_tls": {
+    "result": {
+      "tls": "TLSv1.3",
+      "loopback": true,
+      "authenticated_native_frames": 316,
+      "encoded_bytes": 3333075,
+      "missing_client_rejected": true,
+      "untrusted_host_rejected": true,
+      "capture_only_after_auth": true
+    },
+    "transport": {
+      "frames": 317,
+      "encodedBytes": 3338946,
+      "elapsed_s": 8.070927200002188,
+      "cpu_core_percent": 1.3551726745840347,
+      "metrics": {
+        "pipe_read_wait_ms": {
+          "n": 317,
+          "p50": 21.906900001340546,
+          "p95": 57.30549999861978,
+          "p99": 63.44779999926686,
+          "max": 71.65269999677548
+        },
+        "tls_send_ms": {
+          "n": 317,
+          "p50": 0.12689999857684597,
+          "p95": 0.2314000012120232,
+          "p99": 0.4459999981918372,
+          "max": 0.851700002385769
+        },
+        "send_timeline_drift_ms": {
+          "n": 317,
+          "p50": 0.7404000017477301,
+          "p95": 29.045399994825402,
+          "p99": 39.38209999561059,
+          "max": 44.96349999537233
+        }
+      }
+    },
+    "workload": "Uncontrolled normal desktop; confirms authenticated framing and local sender costs only."
+  },
+  "backpressure": [
+    {
+      "stall_s": 0.5,
+      "frames": 307,
+      "exit": 0,
+      "peak_pending": 3
+    },
+    {
+      "stall_s": 6.5,
+      "frames": 65,
+      "exit": 0,
+      "peak_pending": 2
+    }
+  ],
+  "final_loopback_tls": {
+    "result": {
+      "tls": "TLSv1.3",
+      "loopback": true,
+      "authenticated_native_frames": 302,
+      "encoded_bytes": 5709145,
+      "missing_client_rejected": true,
+      "untrusted_host_rejected": true,
+      "capture_only_after_auth": true
+    },
+    "transport": {
+      "frames": 303,
+      "encodedBytes": 5711321,
+      "elapsed_s": 8.081987799996568,
+      "cpu_core_percent": 0.3866623010741648,
+      "metrics": {
+        "pipe_read_wait_ms": {
+          "n": 303,
+          "p50": 18.999200001417194,
+          "p95": 58.018199997604825,
+          "p99": 63.38059999688994,
+          "max": 77.60560000315309
+        },
+        "tls_send_ms": {
+          "n": 303,
+          "p50": 0.11200000153621659,
+          "p95": 0.2147999985027127,
+          "p99": 0.4651000053854659,
+          "max": 316.1171999963699
+        },
+        "send_timeline_drift_ms": {
+          "n": 303,
+          "p50": 0.20569999885310608,
+          "p95": 29.42740000242702,
+          "p99": 44.88560000366738,
+          "max": 315.01830000253767
+        }
+      }
+    }
+  }
+}

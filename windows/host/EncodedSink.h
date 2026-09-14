@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <mutex>
+#include <memory>
 
 // Local binary pipe only. The separate TLS harness owns network authentication.
 // Each record is big-endian: payload length u32, timestamp in 100 ns u64,
@@ -10,7 +11,9 @@
 class EncodedSink final : public IMFSampleGrabberSinkCallback {
     std::atomic<ULONG> references{1};
     std::mutex mutex;
+    std::shared_ptr<PerfStats> stats;
 public:
+    explicit EncodedSink(std::shared_ptr<PerfStats> metrics) : stats(std::move(metrics)) {}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** result) override {
         if (!result) return E_POINTER;
         *result = nullptr;
@@ -36,12 +39,16 @@ public:
         LONGLONG, const BYTE* data, DWORD length) override {
         if (!length || length > 16 * 1024 * 1024) return E_INVALIDARG;
         std::lock_guard<std::mutex> lock(mutex);
+        if (stats) stats->output(time, length);
+        const auto began = perfCounter();
         unsigned char header[16];
         for (int i = 0; i < 4; ++i) header[i] = BYTE(length >> (24 - 8*i));
         for (int i = 0; i < 8; ++i) header[4+i] = BYTE(uint64_t(time) >> (56 - 8*i));
         for (int i = 0; i < 4; ++i) header[12+i] = BYTE(flags >> (24 - 8*i));
-        if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-            fwrite(data, 1, length, stdout) != length || fflush(stdout)) return E_FAIL;
+        const bool ok = fwrite(header, 1, sizeof(header), stdout) == sizeof(header) &&
+            fwrite(data, 1, length, stdout) == length && fflush(stdout) == 0;
+        if (stats) { stats->add("pipe_write_ms", perfMs(perfCounter() - began)); stats->delivered(time); }
+        if (!ok) return E_FAIL;
         return S_OK;
     }
 };
