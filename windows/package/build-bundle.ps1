@@ -2,9 +2,11 @@ param(
     [Parameter(Mandatory=$true)][string]$RuntimeArchive,
     [Parameter(Mandatory=$true)][string]$Wheelhouse,
     [Parameter(Mandatory=$true)][string]$BuildPython,
-    [Parameter(Mandatory=$true)][string]$ZeroconfSourceArchive
+    [Parameter(Mandatory=$true)][string]$ZeroconfSourceArchive,
+    [string]$Version='1.0.0'
 )
 $ErrorActionPreference='Stop'
+if ($Version -notmatch '^\d+\.\d+\.\d+$' -or @($Version.Split('.') | Where-Object {[int]$_ -gt 65534}).Count) { throw 'Expected three numeric version components, each below65535' }
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $bundleRoot=Join-Path $projectRoot ('.local/bundle-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 $appRoot=Join-Path $bundleRoot 'app'
@@ -13,7 +15,9 @@ if ((Get-FileHash -LiteralPath $ZeroconfSourceArchive).Hash -ne 'CE6C548E665759B
 New-Item -ItemType Directory -Path $appRoot | Out-Null
 Push-Location $projectRoot
 try {
-    & cmd /c windows\ui\build.cmd
+    New-Item -ItemType Directory -Path .local/product -Force | Out-Null
+    ('using System.Reflection; [assembly: AssemblyVersion("'+$Version+'.0")] [assembly: AssemblyFileVersion("'+$Version+'.0")]') | Set-Content -LiteralPath .local/product/Version.cs -Encoding ASCII
+    & cmd /c windows\ui\build.cmd package
     if ($LASTEXITCODE -ne 0) { throw 'Windows UI build failed' }
     & cmd /c windows\host\build.cmd
     if ($LASTEXITCODE -ne 0) { throw 'Native capture build failed' }
@@ -38,7 +42,7 @@ try {
     $files=Get-ChildItem -LiteralPath $appRoot -File -Recurse | ForEach-Object {
         [ordered]@{path=$_.FullName.Substring($appRoot.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()}
     }
-    $manifest=[ordered]@{product='Spatial PC';version='1.0.0';distribution='unsigned-test';sourceCommit=(git rev-parse HEAD);workingTreeDirty=[bool](git status --porcelain);python='3.14.7';architecture='x64';minimumWindowsBuild=22000;files=@($files)}
+    $manifest=[ordered]@{product='Spatial PC';version=$Version;distribution='unsigned-test';sourceCommit=(git rev-parse HEAD);workingTreeDirty=[bool](git status --porcelain);python='3.14.7';architecture='x64';minimumWindowsBuild=22000;files=@($files)}
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $appRoot 'bundle-manifest.json') -Encoding UTF8
     & (Join-Path $runtime 'python.exe') -I -B -c 'import ssl,cryptography,zeroconf,product.main'
     if ($LASTEXITCODE -ne 0) { throw 'Isolated runtime import check failed' }

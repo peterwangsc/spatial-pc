@@ -1,12 +1,13 @@
 param(
     [Parameter(Mandatory=$true)][string]$BundleDirectory,
-    [Parameter(Mandatory=$true)][string]$ISCC,
-    [string]$Version='1.0.0'
+    [Parameter(Mandatory=$true)][string]$ISCC
 )
 $ErrorActionPreference='Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected numeric three-part version' }
 $bundle=(Resolve-Path -LiteralPath $BundleDirectory).Path
 $manifest=Get-Content -LiteralPath (Join-Path $bundle 'bundle-manifest.json') -Raw | ConvertFrom-Json
+$Version=$manifest.version
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected numeric three-part manifest version' }
+if ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $bundle 'SpatialPC.exe')).FileVersion -ne ($Version+'.0')) { throw 'Application and installer versions differ' }
 $expected=@($manifest.files.path)+@('bundle-manifest.json')
 foreach ($actual in (Get-ChildItem -LiteralPath $bundle -File -Recurse)) {
     $relative=$actual.FullName.Substring($bundle.Length+1).Replace('\','/')
