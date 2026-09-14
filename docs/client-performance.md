@@ -20,4 +20,10 @@ Network exact reads run outside the main actor and request the remaining bytes o
 
 ## Local decode probe
 
-Compile `scripts/DecodeProbe.swift` together with `StreamWire.swift` and `H264Decoder.swift` using `swiftc -O`. It reads SPC1 from stdin and emits timing metadata without saving decoded pixels. `scripts/validate_lab_stream.py` connects with an explicitly provisioned pair and feeds 120 frames to the probe. Coordinate with the host operator before capture tests; do not run it during another capture benchmark.
+Compile `scripts/DecodeProbe.swift` together with `StreamWire.swift` and `H264Decoder.swift` using `swiftc -O`. It reads SPC1 from stdin and emits timing metadata without saving decoded pixels. `scripts/validate_lab_stream.py` connects with an explicitly provisioned pair and feeds 120 frames by default; `--frames 600` extends a sample. The probe reports decoder percentiles, arrival intervals, and relative arrival-versus-host-timestamp drift. Drift is referenced to the first payload, includes sender/network/pipe scheduling, and is not an absolute latency estimate. Coordinate with the host operator before capture tests; do not run it during another capture benchmark.
+
+## Integrated development check
+
+The reviewed RTX 4070 candidate delivered real 1920×1080 desktop frames over LAN TLS 1.3 to the optimized M4 Pro hardware decoder. A 600-frame ordinary-desktop sample decoded every frame in 15.344 seconds, with decode p50/p95/p99 2.846/4.404/5.719 ms. Source updates were uncontrolled; this is not a 60 FPS throughput benchmark. Client arrival interval p95 was 57.687 ms, while matched host pipe-read p95 was 56.567 ms and TLS-send p95 was 0.211 ms. Native acquire-to-encoded p95 was about 34.8 ms. These measurements point toward variable source/encoder scheduling for common gaps; they do not assign the isolated large client-arrival spike to a single stage.
+
+The same host also delivered more than 14,000 frames to the visionOS simulator and passed the actual Windows window → progressive Focus → window transition. Missing-client and untrusted-host certificate rejection passed before the native probe sessions. All retained artifacts contain timing metadata; no desktop recordings are needed for these checks. Physical headset performance remains unverified for this revision while the device is off.

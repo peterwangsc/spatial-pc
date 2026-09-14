@@ -4,7 +4,9 @@ import argparse
 parser=argparse.ArgumentParser(description='Validate TLS rejection and live native hardware decoding; no pixel files are written.')
 parser.add_argument('--pair-directory',type=Path,required=True)
 parser.add_argument('--decoder',type=Path,required=True)
+parser.add_argument('--frames',type=int,default=120,help='Frames to decode (1-36000); no image retention')
 args=parser.parse_args()
+if not 1<=args.frames<=36000:parser.error('--frames must be between 1 and 36000')
 root=args.pair_directory;pair=json.loads((root/'lab-pair.json').read_text())
 def exact(s,n):
  b=bytearray()
@@ -33,10 +35,10 @@ with connect(context()) as s:
  header=exact(s,8);assert header[:4]==b'SPC1'
  count=struct.unpack('!I',header[4:])[0];assert count<=4096
  body=exact(s,count);print('server='+body.decode(),flush=True)
- p=subprocess.Popen([str(args.decoder.resolve())],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ p=subprocess.Popen([str(args.decoder.resolve()),str(args.frames)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  try:
   p.stdin.write(header+body)
-  for i in range(120):
+  for i in range(args.frames):
    frame=exact(s,16);n=struct.unpack('!I',frame[:4])[0];assert 0<n<=16777216
    p.stdin.write(frame+exact(s,n));p.stdin.flush()
   p.stdin.close();p.wait(timeout=30)
