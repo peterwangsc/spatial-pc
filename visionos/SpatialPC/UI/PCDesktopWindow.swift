@@ -15,12 +15,23 @@ struct PCDesktopWindow: View {
             .frame(minWidth:480,minHeight:480/aspect)
             .ignoresSafeArea()
             .contentShape(Rectangle())
+            .opacity(model.stream.hasFrames ? 1 : 0)
+            .background(.black)
+            .overlay {
+                if !model.stream.hasFrames {
+                    VStack(spacing:16) {
+                        if model.stream.active { ProgressView(); Text("Reconnecting to your PC…") }
+                        else {
+                            Text(model.stream.userMessage ?? "Desktop disconnected")
+                            Button("Reconnect",systemImage:"arrow.clockwise") { model.stream.connect() }
+                        }
+                    }.padding(28).background(.regularMaterial,in:RoundedRectangle(cornerRadius:24))
+                }
+            }
             .overlay(alignment:.topLeading) { DesktopNavigationButton(model:model,action:.back).padding(12) }
             .overlay(alignment:.topTrailing) {
                 HStack(spacing:8) {
-                    #if DEBUG
                     if model.stream.textAvailable { DesktopKeyboardButton(model:model) }
-                    #endif
                     DesktopNavigationButton(model:model,action:.focus)
                 }.padding(12)
             }
@@ -31,18 +42,14 @@ struct PCDesktopWindow: View {
             }
             .onDisappear {
                 // Closing the desktop must not leave an empty immersive environment.
-                #if DEBUG
                 model.stream.stopControl()
-                #endif
                 guard model.destination == .focus else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
                 }
             }
             .onChange(of:scenePhase,initial:true) { _, phase in
-                #if DEBUG
                 if phase != .active { model.stream.stopControl() }
-                #endif
                 guard phase == .active, model.destination == .desktop else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
@@ -60,9 +67,7 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(model:model,aspect:aspect) }
     func updateUIView(_ view:DesktopMetalView,context:Context) {
         view.setAspect(aspect)
-        #if DEBUG
         view.updateKeyboardRequest(keyboardRequest)
-        #endif
     }
     static func dismantleUIView(_ view:DesktopMetalView,coordinator:()) { view.isPaused = true; view.delegate = nil }
 }
@@ -75,12 +80,10 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     private var submittedFrame: UInt64?
     private var submittedSize = CGSize.zero
     private var inFlight = false
-    #if DEBUG
     private var input: DesktopInputController?
     private var keyboardRequest = 0
     private var showsSystemKeyboard = false
     private let suppressedKeyboard = UIView(frame:.zero)
-    #endif
 
     init(model:AppModel,aspect:CGFloat) {
         self.renderer = model.renderer; self.aspect = aspect
@@ -91,9 +94,7 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         autoResizeDrawable = true; delegate = self
         isUserInteractionEnabled = true
         addInteraction(UIPointerInteraction(delegate:self))
-        #if DEBUG
         input = DesktopInputController(view:self,stream:model.stream)
-        #endif
         do {
             guard let device, let library = device.makeDefaultLibrary() else { return }
             let descriptor = MTLRenderPipelineDescriptor()
@@ -109,12 +110,9 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         appliedAspect = nil
         if window != nil { isPaused = false; applyGeometry() } else {
             isPaused = true
-            #if DEBUG
             input?.stop()
-            #endif
         }
     }
-    #if DEBUG
     override var canBecomeFirstResponder: Bool { input?.available == true }
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -189,7 +187,6 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         if !commands.isEmpty { super.pressesEnded(commands,with:event) }
     }
     override func pressesCancelled(_ presses:Set<UIPress>,with event:UIPressesEvent?) { input?.stop() }
-    #endif
     func setAspect(_ value:CGFloat) {
         guard value.isFinite, value > 0 else { return }
         aspect = value; applyGeometry()
@@ -243,7 +240,6 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     }
 }
 
-#if DEBUG
 extension DesktopMetalView: UIKeyInput {
     var hasText: Bool { true } // Remote selection is unknown; always permit Delete.
     var autocorrectionType: UITextAutocorrectionType { get { .no } set {} }
@@ -255,4 +251,3 @@ extension DesktopMetalView: UIKeyInput {
     func insertText(_ text:String) { input?.insertText(text) }
     func deleteBackward() { input?.deleteBackward() }
 }
-#endif

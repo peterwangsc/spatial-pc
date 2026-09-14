@@ -10,34 +10,10 @@ struct ControlCenter: View {
     @State private var settingsOpen = false
     @State private var devicesOpen = false
 
-    private var paired: Bool {
-        #if DEBUG
-        model.stream.available
-        #else
-        false
-        #endif
-    }
-    private var streaming: Bool {
-        #if DEBUG
-        model.stream.active && model.stream.hasFrames
-        #else
-        false
-        #endif
-    }
-    private var connectedLabel: String {
-        #if DEBUG
-        model.stream.inputAvailable ? "Connected securely" : "Connected securely · View only"
-        #else
-        "Connected securely · View only"
-        #endif
-    }
-    private var connecting: Bool {
-        #if DEBUG
-        model.stream.active && !streaming
-        #else
-        false
-        #endif
-    }
+    private var paired:Bool { model.stream.available }
+    private var streaming:Bool { model.stream.active && model.stream.hasFrames }
+    private var connectedLabel:String { model.stream.inputAvailable ? "Connected securely" : "Connected securely · View only" }
+    private var connecting:Bool { model.stream.active && !streaming }
     var body: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:24) {
@@ -52,7 +28,7 @@ struct ControlCenter: View {
         }
         .frame(minWidth:700,minHeight:480)
         .sheet(isPresented:$settingsOpen) { settings }
-        .sheet(isPresented:$devicesOpen) { deviceSetup }
+        .sheet(isPresented:$devicesOpen) { DeviceSetup(model:model) }
         .task {
             guard !model.startupHandled else { return }
             model.startupHandled = true
@@ -85,14 +61,22 @@ struct ControlCenter: View {
                     Text("My Devices").font(.largeTitle.bold())
                     Spacer()
                     Button("Add Device",systemImage:"plus") { devicesOpen = true }
+                        .disabled(model.devices.error != nil)
                 }
+            }
+            if model.devices.hosts.count > 1 {
+                Picker("Selected PC",selection:Binding(get:{ model.devices.selectedID ?? "" },set:{ id in
+                    guard let host = model.devices.hosts.first(where:{ $0.id == id }) else { return }
+                    model.stream.disconnect()
+                    do { try model.devices.select(host); model.stream.refreshPairing() } catch { model.error = "Could not select this PC." }
+                })) { ForEach(model.devices.hosts) { Text($0.name).tag($0.id) } }
             }
             if paired {
                 HStack(spacing:20) {
                     Image(systemName:"desktopcomputer").font(.system(size:42))
                         .foregroundStyle(.mint).frame(width:74,height:84)
                     VStack(alignment:.leading,spacing:7) {
-                        Text(pcName.isEmpty ? "Windows PC" : pcName).font(.title2.bold())
+                        Text(model.devices.selected?.name ?? (pcName.isEmpty ? "Windows PC" : pcName)).font(.title2.bold())
                         HStack(spacing:7) {
                             Circle().fill(streaming ? Color.green : Color.secondary).frame(width:7,height:7)
                             Text(streaming ? connectedLabel : connecting ? "Connecting…" : "Selected · Windows")
@@ -106,52 +90,57 @@ struct ControlCenter: View {
                             .buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
                     } else {
                         Button(connecting ? "Cancel" : "Connect",systemImage:connecting ? "xmark" : "link") {
-                            #if DEBUG
                             if connecting { model.stream.disconnect() } else { model.stream.connect() }
-                            #endif
                         }.buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
                     }
                 }.padding(20).background(.thinMaterial,in:RoundedRectangle(cornerRadius:24))
             } else {
                 Text("No devices added").foregroundStyle(.secondary).padding(.vertical,24)
             }
-            #if DEBUG
+            if let error = model.devices.error ?? model.error { Text(error).foregroundStyle(.orange) }
+            if model.devices.error != nil {
+                Button("Try Again") { model.devices.reload(); model.stream.refreshPairing() }
+            }
             if let failure = model.stream.userMessage {
                 Label(failure,systemImage:"exclamationmark.circle").foregroundStyle(.orange).font(.callout)
             }
-            #endif
         }
-    }
-    private var setup: some View {
-        VStack(alignment:.leading,spacing:20) {
-            Text("Windows PCs").font(.title2.bold())
-            Text("Pairing is not available in this preview.").foregroundStyle(.secondary)
-            Button("Find PCs",systemImage:"network") { model.discovery.start() }
-                .buttonStyle(.borderedProminent).tint(.mint)
-            Text(model.discovery.status).font(.callout).foregroundStyle(.secondary)
-            ForEach(model.discovery.hosts,id:\.self) { Label($0,systemImage:"desktopcomputer") }
-        }
-    }
-    private var deviceSetup: some View {
-        NavigationStack {
-            ScrollView { setup.padding(28) }
-                .navigationTitle("Add Device")
-                .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { devicesOpen = false } } }
-        }.frame(width:640,height:620)
     }
     private var settings: some View {
         NavigationStack {
             Form {
                 Section("Windows host") {
-                    Text("1. Open the download page on your Windows PC.")
                     Link("peterwang.tech/spatial-pc",destination:URL(string:"https://peterwang.tech/spatial-pc")!)
-                    Text("2. Download and install Spatial PC Host when it becomes available.")
-                    Text("3. Open the host and follow its pairing steps.")
-                    Text("The Windows installer is not available yet.").foregroundStyle(.secondary)
+                    HStack {
+                        Link("Support",destination:URL(string:"https://peterwang.tech/spatial-pc/support")!)
+                        Spacer()
+                        Link("Privacy",destination:URL(string:"https://peterwang.tech/spatial-pc/privacy")!)
+                    }
+                    Text("On your PC, download and install Spatial PC Host. Open it, enable access on a private network, and choose Pair Device. Keep both devices on that network.")
+                }
+                Section("Saved PCs") {
+                    ForEach(model.devices.hosts) { host in
+                        HStack {
+                            Text(host.name); Spacer()
+                            Button("Forget",role:.destructive) {
+                                if model.devices.selectedID == host.id { model.stream.disconnect() }
+                                do { try model.devices.forget(host); model.stream.refreshPairing() } catch { model.error = "Could not remove this PC." }
+                            }
+                        }
+                    }
+                    Text("To revoke access on the PC, remove this Vision Pro in the Windows host.").foregroundStyle(.secondary)
+                }
+                Section("Keyboard") {
+                    Text("If Space and Tab navigate app controls, turn off Full Keyboard Access in visionOS Settings → Accessibility → Keyboards while using the remote desktop.")
                 }
             }.navigationTitle("Settings")
-                .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { settingsOpen = false } } }
-        }.frame(width:580,height:520)
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction) {
+                        Button("Close",systemImage:"xmark") { settingsOpen = false }
+                            .labelStyle(.iconOnly).keyboardShortcut(.cancelAction)
+                    }
+                }
+        }.frame(width:640,height:640)
     }
     private func showDesktop() {
         guard !model.transitionPending else { return }

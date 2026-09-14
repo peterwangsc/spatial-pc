@@ -1,17 +1,16 @@
 import UIKit
 
-#if DEBUG
 /// Input is scoped to this desktop view and positively negotiated by the host.
 /// Hover alone never acquires control. No coordinates or key contents are logged.
 @MainActor final class DesktopInputController: NSObject {
     private weak var view: UIView?
-    private let stream: LabStreamClient
+    private let stream: DesktopStreamClient
     private var keyboard = InputWire.KeyboardState()
     private var buttons = Set<Int32>()
     private var wheelRemainder = CGPoint.zero
     var available: Bool { stream.inputAvailable && stream.hasFrames }
     var textAvailable: Bool { stream.textAvailable && available }
-    init(view:UIView,stream:LabStreamClient) {
+    init(view:UIView,stream:DesktopStreamClient) {
         self.view = view; self.stream = stream
         super.init()
         let hover = UIHoverGestureRecognizer(target:self,action:#selector(hovered))
@@ -136,4 +135,3 @@ import UIKit
         return true
     }
 }
-#endif

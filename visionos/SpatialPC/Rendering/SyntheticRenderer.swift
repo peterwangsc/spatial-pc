@@ -127,7 +127,7 @@ final class SyntheticRenderer: NSObject {
     func endVideo() {
         if videoMode { saveMeasurements(); measurements = [] }
         renderGeneration = UUID(); inFlight = false; latestVideo = nil
-        videoMode = false; resume()
+        videoMode = false; stop()
     }
 
     private struct RetainedFrame: @unchecked Sendable {

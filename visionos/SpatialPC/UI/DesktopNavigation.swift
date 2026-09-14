@@ -1,6 +1,17 @@
 import SwiftUI
 
-#if DEBUG
+private struct DesktopControlVisibility:ViewModifier {
+    let alwaysVisible:Bool
+    @ViewBuilder func body(content:Content) -> some View {
+        if alwaysVisible { content }
+        else {
+            content.hoverEffect { effect,isActive,_ in
+                effect.opacity(isActive ? 1 : 0)
+            }
+        }
+    }
+}
+
 struct DesktopKeyboardButton: View {
     @Bindable var model: AppModel
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
@@ -10,9 +21,7 @@ struct DesktopKeyboardButton: View {
                 .font(.title3.weight(.semibold))
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
-                .hoverEffect { effect,isActive,_ in
-                    effect.opacity(isActive || voiceOverEnabled ? 1 : 0)
-                }
+                .modifier(DesktopControlVisibility(alwaysVisible:voiceOverEnabled || !model.stream.hasFrames))
         }
         .buttonStyle(.plain)
         // Desktop typing belongs to the remote responder, including Space.
@@ -25,7 +34,6 @@ struct DesktopKeyboardButton: View {
         .disabled(model.transitionPending)
     }
 }
-#endif
 
 struct DesktopNavigationButton: View {
     enum Action { case back, focus }
@@ -44,9 +52,7 @@ struct DesktopNavigationButton: View {
                 .font(.title3.weight(.semibold))
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
-                .hoverEffect { effect, isActive, _ in
-                    effect.opacity(isActive || voiceOverEnabled ? 1 : 0)
-                }
+                .modifier(DesktopControlVisibility(alwaysVisible:voiceOverEnabled || !model.stream.hasFrames))
         }
         .buttonStyle(.plain)
         // Desktop typing belongs to the remote responder, including Space.
@@ -62,13 +68,9 @@ struct DesktopNavigationButton: View {
         Task { @MainActor in
             guard !model.transitionPending else { return }
             model.transitionPending = true
-            #if DEBUG
             model.stream.stopControl()
-            #endif
             if action == .back {
-                #if DEBUG
                 model.stream.disconnect()
-                #endif
                 model.destination = .devices
                 openWindow(id:"controls")
             } else if model.isImmersed {

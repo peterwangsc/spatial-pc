@@ -5,10 +5,9 @@ import CryptoKit
 import Observation
 import CoreVideo
 
-#if DEBUG
 @MainActor @Observable
-final class LabStreamClient {
-    private(set) var status = "Encrypted lab connection is not provisioned." { didSet { if oldValue != status { saveDiagnostics() } } }
+final class DesktopStreamClient {
+    private(set) var status = "Add a PC to get started." { didSet { if oldValue != status { saveDiagnostics() } } }
     private(set) var userMessage: String?
     private(set) var available = false
     private(set) var connected = false
@@ -35,13 +34,18 @@ final class LabStreamClient {
     @ObservationIgnored private let queue = DispatchQueue(label:"SpatialPC.secure-stream",qos:.userInteractive)
     @ObservationIgnored private let decoderQueue = DispatchQueue(label:"SpatialPC.decode",qos:.userInteractive)
     @ObservationIgnored private let renderer: SyntheticRenderer
+    @ObservationIgnored private let devices: PairedHostStore
+    @ObservationIgnored private var retryTask:Task<Void,Never>?
+    @ObservationIgnored private var startupDeadline:Task<Void,Never>?
+    @ObservationIgnored private var requested = false
+    @ObservationIgnored private var retryCount = 0
 
     enum Failure: Error { case unpaired, ended, trust, protocolMismatch }
-    init(renderer: SyntheticRenderer) {
-        self.renderer = renderer
+    init(renderer: SyntheticRenderer,devices:PairedHostStore) {
+        self.renderer = renderer; self.devices = devices
         refreshPairing()
     }
-    private func saveDiagnostics() {
+    private func saveDiagnostics(filename:String = "connection-diagnostics.json") {
         let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
         struct Snapshot: Encodable, Sendable {
             let status: String
@@ -65,17 +69,56 @@ final class LabStreamClient {
                                 keyboardPresentationRequested:keyboardPresentationRequested)
         diagnosticsQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) {
-                try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
+                try? data.write(to:root.appendingPathComponent(filename),options:.atomic)
             }
         }
     }
     func refreshPairing() {
-        do {
-            available = try LabPairing.load() != nil
-            status = available ? "Lab pair installed · ready for encrypted streaming" : "Encrypted lab connection is not provisioned."
-        } catch { available = false; status = "Lab enrollment could not be loaded: \(error)"; userMessage = "Your saved pairing could not be loaded. Set up this PC again." }
+        available = devices.selected != nil
+        #if DEBUG
+        if !available { available = (try? LabPairing.load()) != nil }
+        #endif
+        status = available ? "Ready to connect" : "Add a PC to get started."
+    }
+    private struct Credentials {
+        let endpoint:NWEndpoint
+        let rootDER:Data
+        let serverName:String
+        let serverSHA256:String
+        let identity:sec_identity_t
+    }
+    private func credentials() throws -> Credentials {
+        if let host = devices.selected {
+            return Credentials(endpoint:host.endpoint,rootDER:host.caCertificate,serverName:host.serverName,
+                               serverSHA256:host.serverSHA256,identity:try DeviceKeychain.identity(for:host))
+        }
+        #if DEBUG
+        if let pair = try LabPairing.load(),let port = NWEndpoint.Port(rawValue:pair.port) {
+            return Credentials(endpoint:.hostPort(host:.init(pair.host),port:port),rootDER:pair.rootDER,
+                               serverName:pair.serverName,serverSHA256:pair.serverSHA256,identity:try pair.identity())
+        }
+        #endif
+        throw Failure.unpaired
     }
     func disconnect() {
+        requested = false; retryTask?.cancel(); retryTask = nil; retryCount = 0
+        endConnection()
+    }
+    private func recover(_ message:String, retry:Bool) {
+        endConnection()
+        guard requested,retry,retryCount < 5 else { requested = false; userMessage = message; status = message; return }
+        retryCount += 1; active = true; status = "Reconnecting…"; userMessage = nil
+        let delay = min(8,1 << (retryCount-1))
+        retryTask = Task { [weak self] in
+            do { try await Task.sleep(for:.seconds(delay)) } catch { return }
+            guard let self,self.requested else { return }
+            self.connectAttempt()
+        }
+    }
+    private func endConnection() {
+        if connection != nil { saveDiagnostics(filename:"last-session-diagnostics.json") }
+        startupDeadline?.cancel(); startupDeadline = nil
+
         controlling = false; inputAvailable = false; textAvailable = false
         keyPressEvents = 0; navigationKeyCommands = 0; committedTextCallbacks = 0; keyboardFirstResponder = false; keyboardPresentationRequested = false
         inputHeartbeat?.cancel(); inputHeartbeat = nil
@@ -86,14 +129,19 @@ final class LabStreamClient {
     }
     func connect() {
         guard connection == nil else { return }
+        requested = true; retryCount = 0; retryTask?.cancel(); retryTask = nil
+        connectAttempt()
+    }
+    private func connectAttempt() {
+        guard requested,connection == nil else { return }
         userMessage = nil
         do {
-            guard let pair = try LabPairing.load(), let port = NWEndpoint.Port(rawValue:pair.port),
-                  let root = SecCertificateCreateWithData(nil,pair.rootDER as CFData) else { throw Failure.unpaired }
+            let pair = try credentials()
+            guard let root = SecCertificateCreateWithData(nil,pair.rootDER as CFData) else { throw Failure.unpaired }
             let tls = NWProtocolTLS.Options()
             let options = tls.securityProtocolOptions
             sec_protocol_options_set_min_tls_protocol_version(options,.TLSv13)
-            sec_protocol_options_set_local_identity(options,try pair.identity())
+            sec_protocol_options_set_local_identity(options,pair.identity)
             sec_protocol_options_set_tls_server_name(options,pair.serverName)
             sec_protocol_options_add_tls_application_protocol(options,"spatialpc/1")
             sec_protocol_options_set_verify_block(options, { _, wrappedTrust, complete in
@@ -108,8 +156,10 @@ final class LabStreamClient {
                 let digest = SHA256.hash(data:SecCertificateCopyData(leaf) as Data).map { String(format:"%02x",$0) }.joined()
                 complete(digest == pair.serverSHA256)
             },queue)
-            let parameters = NWParameters(tls:tls,tcp:NWProtocolTCP.Options())
-            let connection = NWConnection(host:NWEndpoint.Host(pair.host),port:port,using:parameters)
+            let tcp = NWProtocolTCP.Options()
+            tcp.enableKeepalive = true; tcp.keepaliveIdle = 10; tcp.keepaliveInterval = 5; tcp.keepaliveCount = 3
+            let parameters = NWParameters(tls:tls,tcp:tcp)
+            let connection = NWConnection(to:pair.endpoint,using:parameters)
             self.connection = connection; active = true; let sessionID = UUID(); generation = sessionID
             status = "Authenticating paired PC…"; receivedFrames = 0; hasFrames = false
             connection.stateUpdateHandler = { [weak self] state in
@@ -117,23 +167,32 @@ final class LabStreamClient {
                     guard let self, self.generation == sessionID else { return }
                     switch state {
                     case .ready:
+                        guard let metadata = connection.metadata(definition:NWProtocolTLS.definition) as? NWProtocolTLS.Metadata,
+                              let negotiated = sec_protocol_metadata_get_negotiated_protocol(metadata.securityProtocolMetadata),
+                              String(cString:negotiated) == "spatialpc/1" else {
+                            self.recover("This PC uses an incompatible connection protocol. Update Spatial PC on both devices.",retry:false)
+                            return
+                        }
                         self.connected = true; self.userMessage = nil; self.status = "Encrypted session · waiting for desktop"
                         Task { await self.receiveStream(connection,sessionID:sessionID) }
                     case .failed(let error):
-                        self.disconnect(); self.status = "Connection failed: \(error)"
-                        if case .tls = error { self.userMessage = "This PC could not be verified. Check its pairing." }
-                        else { self.userMessage = "Could not reach your PC. Check that the host is running on the same network, then try again." }
+                        if case .tls = error { self.recover("This PC could not be verified. Check its pairing or pair again.",retry:false) }
+                        else { self.recover("Could not reach your PC. Check that its host is enabled on the same network.",retry:true) }
                     case .waiting(let error):
                         if case .tls = error {
-                            self.disconnect(); self.status = "Connection failed: certificate authentication was rejected."
-                            self.userMessage = "This PC could not be verified. Check its pairing."
+                            self.recover("This PC could not be verified. Check its pairing or pair again.",retry:false)
                         } else { self.status = "Waiting for the paired PC: \(error)"; self.userMessage = "Waiting for your PC. Check the host and your local network, or cancel to try again." }
                     default: break
                     }
                 }
             }
+            startupDeadline = Task { [weak self] in
+                do { try await Task.sleep(for:.seconds(15)) } catch { return }
+                guard let self,self.generation == sessionID,!self.hasFrames else { return }
+                self.recover("The PC did not send a desktop. Check its host and try again.",retry:true)
+            }
             connection.start(queue:queue)
-        } catch { status = "Could not authenticate the lab pair: \(error)"; connection?.cancel(); connection = nil; active = false; userMessage = "Could not use this saved pairing. Set up the PC again." }
+        } catch { recover("Could not use this saved pairing. Set up the PC again.",retry:false) }
     }
     @discardableResult func startControl() -> Bool {
         guard inputAvailable,hasFrames,connection != nil else { return false }
@@ -249,7 +308,7 @@ final class LabStreamClient {
                 guard generation == sessionID else { return }
                 if let frame {
                     renderer.presentVideo(frame.pixel)
-                    if !hasFrames { hasFrames = true }
+                    if !hasFrames { hasFrames = true; retryCount = 0; startupDeadline?.cancel(); startupDeadline = nil }
                     receivedFrames += 1; decodeMS = frame.decodeMS; hardwareDecoder = frame.hardware
                     if receivedFrames % 60 == 0 { saveDiagnostics() }
                     status = "Live PC · encrypted · " + (hardwareDecoder ? "hardware decode" : "simulator decode")
@@ -257,8 +316,11 @@ final class LabStreamClient {
             }
         } catch {
             guard generation == sessionID else { return }
-            disconnect(); status = "Stream ended: \(error)"; userMessage = "The desktop connection ended. Check your PC, then reconnect."
+            if error is StreamWire.Invalid || error is DecodingError {
+                recover("This PC sent an incompatible desktop stream. Update Spatial PC on both devices.",retry:false)
+            } else {
+                recover("The desktop connection ended. Check your PC, then reconnect.",retry:true)
+            }
         }
     }
 }
-#endif
