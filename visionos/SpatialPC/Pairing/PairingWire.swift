@@ -46,7 +46,15 @@ enum PairingWire {
     static func validateName(_ name:String) throws -> Data {
         let bytes = Data(name.utf8)
         guard !bytes.isEmpty, bytes.count <= 64,
-              !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw Failure.invalidMessage }
+              !name.unicodeScalars.contains(where: {
+                  // Match the host's Unicode category C exclusion. Swift strings
+                  // cannot contain surrogate scalars, but reject every category
+                  // explicitly so future editable names use the same wire rules.
+                  switch $0.properties.generalCategory {
+                  case .control, .format, .surrogate, .privateUse, .unassigned: true
+                  default: false
+                  }
+              }) else { throw Failure.invalidMessage }
         return bytes
     }
     static func hexBytes(_ text:String, count:Int) throws -> Data {

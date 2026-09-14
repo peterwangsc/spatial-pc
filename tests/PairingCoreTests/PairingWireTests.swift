@@ -71,4 +71,12 @@ final class PairingWireTests: XCTestCase {
         XCTAssertThrowsError(try PairingWire.validateName(String(repeating:"界",count:22)))
         XCTAssertThrowsError(try PairingWire.hexBytes("AB",count:1))
     }
+    func testDeviceNameUnicodeContract() throws {
+        for name in ["Vision Pro", "Peter’s 界", "🙂"] {
+            XCTAssertEqual(try PairingWire.validateName(name),Data(name.utf8))
+        }
+        for name in ["", "bad\u{0}name", "bad\u{200D}name", "bad\u{E000}name", "bad\u{0378}name"] {
+            XCTAssertThrowsError(try PairingWire.validateName(name))
+        }
+    }
 }
