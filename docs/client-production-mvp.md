@@ -1,6 +1,6 @@
 # Consumer client preparation
 
-This change makes the visionOS Release configuration capable of enrollment and streaming. Distribution is still pending a packaged Windows host, integrated production-host testing, and App Store processing. It does not broaden the demonstrated MVP beyond one physical Windows display on the local network.
+This change makes the visionOS Release configuration capable of enrollment and streaming. Distribution is still pending publisher-signed Windows packaging, physical consumer-build validation, and App Store processing. It does not broaden the demonstrated MVP beyond one physical Windows display on the local network.
 
 ## First connection
 
@@ -26,7 +26,7 @@ Physical testing of the prior input build established that letters and the float
 ## Validation so far
 
 - 25 Swift protocol/storage tests pass, including the exact Windows-generated transcript/HMAC/signature vector, strict JSON/framing limits, and existing video/input checks.
-- Release simulator builds, a signed visionOS Release archive, and an App Store IPA export succeeded with the app icon and privacy manifest. Version 1.0.0 build 12 was exported with the verified distribution team; it has not been uploaded or approved.
+- Release simulator builds, a signed visionOS Release archive, and an App Store IPA export succeeded with the app icon and privacy manifest. Version 1.0.0 build 14 was exported with the verified distribution team; it has not been uploaded or approved.
 - visionOS 26.5 simulator, Release build 11: manual enrollment reached local approval, installed the matching Keychain identity, saved the PC, and connected to an encrypted synthetic stream. More than 1,000 frames decoded in the first session.
 - Killing and restoring the loopback server caused a visible reconnect state and automatic recovery with the same stored identity.
 - Reinstalling/relaunching the app retained the paired PC; Connect again decoded more than 780 frames.
@@ -57,4 +57,4 @@ Build 14 added two recovery fixes after this Windows phase. With synthetic loopb
 
 The demonstrated MVP has encrypted single-display streaming, pointer/keyboard input, a window beside other visionOS windows, and adjustable Focus immersion. Audio, clipboard transfer, WAN access, file transfer, multiple monitors and a headless virtual Windows monitor are outside this release scope. Capture still requires a logged-in interactive Windows session and a supported hardware H.264 encoder.
 
-Before distribution: complete consumer host integration, clean installation/upgrade/uninstall checks, publisher signing, real-network discovery and pairing, physical production-build regression, and App Store metadata/review. The support and privacy pages are live on the project website. No public installer is available yet.
+Before distribution: complete the remaining consumer host changes and physical integration, clean-machine installation/upgrade/uninstall checks, publisher signing, real-network discovery and pairing, and App Store metadata/review. Normal-user installer lifecycle checks on the development PC passed separately; that is not a clean-machine test. The support and privacy pages are live on the project website. No public installer is available yet.
