@@ -27,21 +27,22 @@ void check(HRESULT hr,const char* where) { if(FAILED(hr)) {std::cerr<<where<<" H
 struct FrameLease { IDXGIOutputDuplication* output; ~FrameLease(){output->ReleaseFrame();} };
 int wmain(int argc,wchar_t** argv) {
  try {
-  if(argc<2) {std::cerr<<"Usage: capture_probe.exe PRIVATE_OUTPUT.mp4 | --stream [--seconds N] [--legacy] [--no-pool] [--no-codec-config] [--unthrottled]\n";return 2;}
+  if(argc<2) {std::cerr<<"Usage: capture_probe.exe PRIVATE_OUTPUT.mp4 | --stream [--seconds N] [--legacy] [--no-pool] [--no-codec-config] [--unthrottled] [--trace-events]\n";return 2;}
   const bool streaming = std::wstring(argv[1]) == L"--stream";
-  bool legacy=false,pool=true,configure=true,unthrottled=false;int duration=streaming?600:12;
+  bool legacy=false,pool=true,configure=true,unthrottled=false,traceEvents=false;int duration=streaming?600:12;
   for(int i=2;i<argc;++i) {
    const std::wstring option=argv[i];
    if(option==L"--legacy") legacy=true;
    else if(option==L"--no-pool") pool=false;
    else if(option==L"--no-codec-config") configure=false;
    else if(option==L"--unthrottled") unthrottled=true;
+   else if(option==L"--trace-events") traceEvents=true;
    else if(option==L"--seconds"&&i+1<argc) duration=std::stoi(argv[++i]);
    else throw std::runtime_error("Unknown capture option");
   }
   if(duration<1||duration>600||(!streaming&&unthrottled)) throw std::runtime_error("Invalid capture limits");
   if(legacy) {pool=false;configure=false;unthrottled=false;}
-  auto statsOwner=std::make_shared<PerfStats>();auto& stats=*statsOwner;
+  auto statsOwner=std::make_shared<PerfStats>(traceEvents);auto& stats=*statsOwner;
   std::cerr<<"capture_options legacy="<<legacy<<" pool="<<pool<<" codec_config="<<configure<<" unthrottled="<<unthrottled<<" max_inflight="<<(legacy?0:4)<<" seconds="<<duration<<"\n";
   if (streaming) _setmode(_fileno(stdout), _O_BINARY);
   check(CoInitializeEx(nullptr,COINIT_MULTITHREADED),"CoInitializeEx");
@@ -120,7 +121,10 @@ int wmain(int argc,wchar_t** argv) {
    }
    stats.add("surface_acquire_ms",perfMs(perfCounter()-allocation));
    DXGI_OUTDUPL_FRAME_INFO info{};ComPtr<IDXGIResource> resource;auto begin=std::chrono::steady_clock::now();
-   HRESULT hr=duplication->AcquireNextFrame(100,&info,&resource);if(hr==DXGI_ERROR_WAIT_TIMEOUT){timeouts++;stats.timeout();continue;}check(hr,"AcquireNextFrame");FrameLease lease{duplication.Get()};
+   if(traceEvents)stats.trace.record(FrameTrace::Kind::AcquireBegin,perfCounter());
+   HRESULT hr=duplication->AcquireNextFrame(100,&info,&resource);
+   if(traceEvents)stats.trace.record(hr==DXGI_ERROR_WAIT_TIMEOUT?FrameTrace::Kind::AcquireTimeout:FrameTrace::Kind::AcquireReturn,perfCounter());
+   if(hr==DXGI_ERROR_WAIT_TIMEOUT){timeouts++;stats.timeout();continue;}check(hr,"AcquireNextFrame");FrameLease lease{duplication.Get()};
    const auto acquired=perfCounter();pacer.acquired(acquired);
    const auto waited=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();captureMs+=waited;stats.add("capture_wait_ms",waited);
    const auto latest=std::max(info.LastPresentTime.QuadPart,info.LastMouseUpdateTime.QuadPart);
@@ -135,11 +139,14 @@ int wmain(int argc,wchar_t** argv) {
    const LONGLONG timestamp=streaming?(legacy?std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count()/100:perf100ns(acquired-captureEpoch)):LONGLONG(frames)*10000000/fps;
    check(sample->SetSampleTime(timestamp),"Sample time");check(sample->SetSampleDuration(10000000/fps),"Sample duration");
    if(streaming)stats.input(timestamp,acquired,info.AccumulatedFrames);
-   begin=std::chrono::steady_clock::now();check(writer->WriteSample(stream,sample.Get()),"WriteSample");const auto submitted=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();submitMs+=submitted;stats.add("write_sample_ms",submitted);frames++;
+   begin=std::chrono::steady_clock::now();check(writer->WriteSample(stream,sample.Get()),"WriteSample");
+   if(traceEvents)stats.trace.record(FrameTrace::Kind::WriteReturn,perfCounter(),timestamp);
+   const auto submitted=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();submitMs+=submitted;stats.add("write_sample_ms",submitted);frames++;
    if(std::chrono::steady_clock::now()>=nextReport){stats.report();cursor.report();nextReport=std::chrono::steady_clock::now()+std::chrono::seconds(5);}
   }
   check(writer->Finalize(),"Finalize");gpuTimings.collect();stats.report();cursor.report();double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
   std::cerr<<"frames="<<frames<<" elapsed_s="<<seconds<<" captured_fps="<<frames/seconds<<" capture_wait_avg_ms="<<(frames?captureMs/frames:0)<<" encode_submit_avg_ms="<<(frames?submitMs/frames:0)<<" timeouts="<<timeouts<<"\n";
+  stats.trace.report(std::cerr);
   if(!frames)return 3;return 0;
  }catch(const std::exception& e){std::cerr<<"probe_failed="<<e.what()<<"\n";return 1;}
 }
