@@ -23,6 +23,9 @@ Install per user, open Spatial PC, select your Private network, then choose
 runtime on TCP47990/47991 and UDP5353, Private profile, LocalSubnet, with no edge
 traversal. It does not change your network category or enable/disable Windows
 Firewall. Enterprise firewall policy can still prohibit connections.
+If Windows already has an inbound block rule for this runtime on a Private
+network, setup preserves it and asks for administrator review. The application
+does not silently delete or override an existing block to enable sharing.
 
 Network selection supports assigned IPv4 or IPv6 addresses, including scoped
 IPv6 link-local addresses. TCP binds only the selected address and family;

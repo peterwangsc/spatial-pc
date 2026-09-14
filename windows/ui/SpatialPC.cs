@@ -68,7 +68,7 @@ internal sealed class HostWindow : Form {
         details.Text="Share one physical display with your paired Vision Pro.";details.AutoSize=true;details.Margin=new Padding(0,10,0,14);layout.Controls.Add(details);
         var accessRow=new FlowLayoutPanel { AutoSize=true,Dock=DockStyle.Fill,WrapContents=true };
         access.Text="Enable access";access.AutoSize=true;access.Enabled=false;access.Click+=(s,e)=>{
-            if(!enabled&&!development&&!FirewallPolicy.Configured()){details.Text="Choose Set up network first. Windows will ask for administrator permission for two limited firewall rules.";return;}
+            if(!enabled&&!development&&!FirewallPolicy.Configured()){details.Text=FirewallPolicy.BlockReason()??"Choose Set up network first. Windows will ask for administrator permission for two limited firewall rules.";return;}
             Send("enable","value",!enabled);
         };
         network.DropDownStyle=ComboBoxStyle.DropDownList;network.Width=330;network.AccessibleName="Private network";
@@ -104,7 +104,7 @@ internal sealed class HostWindow : Form {
         Shown+=(s,e)=>{
             LoadNetworks();
             if(development||FirewallPolicy.Configured())StartWorker();
-            else{state.Text="Set up your connection";details.Text="Choose Set up network to allow Spatial PC on your Private local network. Access will stay disabled.";}
+            else{state.Text="Set up your connection";details.Text=FirewallPolicy.BlockReason()??"Choose Set up network to allow Spatial PC on your Private local network. Access will stay disabled.";}
             if(background)Hide();
         };
         FormClosing+=async(s,e)=>{if(quitting)return;e.Cancel=true;if(e.CloseReason==CloseReason.WindowsShutDown||e.CloseReason==CloseReason.TaskManagerClosing)await Quit();else Hide();};
@@ -121,7 +121,8 @@ internal sealed class HostWindow : Form {
         firewall.Enabled=false;
         try{using(var setup=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"--configure-firewall"){UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden})){
             await Task.Run(()=>setup.WaitForExit());
-            details.Text=setup.ExitCode==0?"Network setup is complete. Access stays disabled until you enable it.":"Network setup did not finish. Ask your Windows administrator to configure Spatial PC.";
+            details.Text=setup.ExitCode==0?"Network setup is complete. Access stays disabled until you enable it.":
+                (FirewallPolicy.BlockReason()??"Network setup did not finish. Ask your Windows administrator to configure Spatial PC.");
             if(setup.ExitCode==0&&worker==null)StartWorker();
         }}catch(Exception){details.Text="Network setup was canceled or unavailable. Access stays disabled.";}
         finally{firewall.Enabled=!enabled;}

@@ -10,6 +10,17 @@ internal static class FirewallPolicy {
         using(var hash=SHA256.Create())return "Spatial PC "+protocol+" "+BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(Runtime.ToLowerInvariant()))).Replace("-","").Substring(0,16);
     }
     static dynamic Policy(){return Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));}
+    internal static bool BlocksRuntime(dynamic rule,string runtime) {
+        return String.Equals((string)rule.ApplicationName,runtime,StringComparison.OrdinalIgnoreCase)
+            &&(bool)rule.Enabled&&(int)rule.Direction==1&&(int)rule.Action==0&&((int)rule.Profiles&2)!=0
+            &&((int)rule.Protocol==6||(int)rule.Protocol==17||(int)rule.Protocol==256);
+    }
+    internal static string BlockReason() {
+        try{foreach(dynamic rule in Policy().Rules)if(BlocksRuntime(rule,Runtime))
+            return "Windows Firewall has a block rule for this installation. Ask your Windows administrator to review it before enabling access.";
+            return null;
+        }catch(Exception){return "Windows Firewall could not be checked. Ask your Windows administrator to review Spatial PC network access.";}
+    }
     static bool Matches(dynamic rule,int protocol) {
         return String.Equals((string)rule.ApplicationName,Runtime,StringComparison.OrdinalIgnoreCase)
             &&(int)rule.Direction==1&&(int)rule.Action==1&&(bool)rule.Enabled&&(int)rule.Profiles==2
@@ -17,6 +28,7 @@ internal static class FirewallPolicy {
             &&String.Equals((string)rule.RemoteAddresses,"LocalSubnet",StringComparison.OrdinalIgnoreCase)&&!(bool)rule.EdgeTraversal;
     }
     internal static bool Configured() {
+        if(BlockReason()!=null)return false;
         try{dynamic policy=Policy();foreach(int protocol in new[]{6,17})if(!Matches(policy.Rules.Item(RuleName(protocol)),protocol))return false;return true;}catch(Exception){return false;}
     }
     internal static bool Present() {
@@ -26,6 +38,7 @@ internal static class FirewallPolicy {
     internal static int Configure(bool remove) {
         if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 5;
         if(!remove&&!File.Exists(Runtime))return 2;
+        if(!remove&&BlockReason()!=null)return 6; // Preserve explicit block policy.
         try {
             dynamic policy=Policy();
             foreach(int protocol in new[]{6,17}) {
