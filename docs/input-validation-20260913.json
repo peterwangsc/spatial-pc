@@ -36,5 +36,23 @@
     },
     "fullVideoPipeCleanup": true
   },
-  "nativeHelperSHA256": "636c3d304340148a7530d23aab7f0006b84a747bef168ba53e41d81a73041905"
+  "nativeHelperSHA256": "636c3d304340148a7530d23aab7f0006b84a747bef168ba53e41d81a73041905",
+  "additionalActualLANValidation": {
+    "fixtureOnly": false,
+    "hostRevision": "8e4225db6b2d1ac91d1efb742e6c1b90934b41b3",
+    "desktopCapture": true,
+    "pointerKeyButtonEvents": 0,
+    "pixelFilesWritten": 0,
+    "tls": "TLSv1.3",
+    "inputNegotiated": true,
+    "controlRecords": 6,
+    "videoFrames": 127,
+    "videoAfterStop": 25,
+    "nativeExit": 0,
+    "leaseExpired": false,
+    "childrenRemainingAfterDisconnect": 0,
+    "separateOlderClientHardwareDecodedFrames": 120,
+    "certificateNegatives": true,
+    "physicalAVPInputValidated": false
+  }
 }
