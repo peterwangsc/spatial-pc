@@ -4,10 +4,33 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'windows'/'host'))
-from input_protocol import Event, EventQueue, Gate, decode
+from input_protocol import Event, EventQueue, Gate, decode, text_negotiated
 
 
 class InputProtocolTests(unittest.TestCase):
+    def test_text_scalar_and_explicit_negotiation(self):
+        for offer in (None, {}, {'textVersion':True}, {'textVersion':1.0}, {'textVersion':'1'}, {'textVersion':2}):
+            self.assertFalse(text_negotiated(offer))
+        self.assertTrue(text_negotiated({'textVersion':1}))
+        for scalar in (0x20,0x7E,0xA0,0xD7FF,0xE000,0xFFFF,0x10000,0x1F642,0x10FFFF):
+            wire=Event(8,0,1,scalar,0,0).wire()
+            self.assertEqual(decode(wire,text_enabled=True).a,scalar)
+            with self.assertRaises(ValueError):decode(wire)
+        for scalar in (-1,0,0x1F,0x7F,0x9F,0xD800,0xDFFF,0x110000):
+            with self.assertRaises(ValueError):decode(Event(8,0,1,scalar,0,0).wire(),text_enabled=True)
+        for event in (Event(8,1,1,0x41,0,0),Event(8,0,1,0x41,1,0),Event(8,0,1,0x41,0,1)):
+            with self.assertRaises(ValueError):decode(event.wire(),text_enabled=True)
+
+    def test_text_is_ordered_bounded_and_requires_control(self):
+        gate=Gate(lambda:0.0)
+        with self.assertRaises(ValueError):gate.accept(Event(8,0,1,0x41,0,0))
+        queue=EventQueue()
+        for sequence in range(1,129):queue.put(Event(8,0,sequence,0x41,0,0))
+        self.assertEqual(len(queue.events),128)
+        with self.assertRaises(ValueError):queue.put(Event(8,0,129,0x41,0,0))
+        queue.put(Event(6,0,130,0,0,0))
+        self.assertEqual([e.kind for e in queue.events],[6])
+
     def test_gate_and_monotonic_sequence(self):
         now = [0.0]
         gate = Gate(lambda:now[0])

@@ -22,11 +22,14 @@ inline uint16_t hidScanCode(int usage) {
     static constexpr uint16_t modifiers[]={0x1d,0x2a,0x38,0x15b,0x11d,0x36,0x138,0x15c};
     return usage>=0xe0&&usage<=0xe7?modifiers[usage-0xe0]:0;
 }
-inline InputEvent parseInput(const std::array<uint8_t,24>& bytes) {
+inline bool validTextScalar(int32_t value) {
+    return value>=0x20&&value<=0x10ffff&&!(value>=0x7f&&value<=0x9f)&&!(value>=0xd800&&value<=0xdfff);
+}
+inline InputEvent parseInput(const std::array<uint8_t,24>& bytes,bool textEnabled=false) {
     auto u32=[&](size_t offset){return uint32_t(bytes[offset])<<24|uint32_t(bytes[offset+1])<<16|uint32_t(bytes[offset+2])<<8|bytes[offset+3];};
     auto i32=[&](size_t offset){const auto value=u32(offset);int32_t result;std::memcpy(&result,&value,4);return result;};
     InputEvent e{bytes[4],bytes[5],u32(8),i32(12),i32(16),i32(20)};
-    if(std::memcmp(bytes.data(),"SPI1",4)||bytes[6]||bytes[7]||!e.sequence||e.kind<1||e.kind>7)throw std::runtime_error("Invalid input header");
+    if(std::memcmp(bytes.data(),"SPI1",4)||bytes[6]||bytes[7]||!e.sequence||e.kind<1||e.kind>8)throw std::runtime_error("Invalid input header");
     const auto allowed=e.kind==2?1:e.kind==4?3:0;
     if(e.flags&~allowed)throw std::runtime_error("Invalid input flags");
     if(e.kind<=2) {
@@ -35,6 +38,8 @@ inline InputEvent parseInput(const std::array<uint8_t,24>& bytes) {
         if(e.a < -1200||e.a>1200||e.b < -1200||e.b>1200||e.c)throw std::runtime_error("Invalid wheel input");
     } else if(e.kind==4) {
         if(!hidScanCode(e.a)||e.b||e.c||e.flags==2)throw std::runtime_error("Invalid keyboard input");
+    } else if(e.kind==8) {
+        if(!textEnabled||!validTextScalar(e.a)||e.b||e.c)throw std::runtime_error("Invalid text input");
     } else if(e.a||e.b||e.c)throw std::runtime_error("Invalid control input");
     return e;
 }

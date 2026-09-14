@@ -1,0 +1,24 @@
+{
+  "pythonTestsPassed": 17,
+  "nativeEngineTestsPassed": true,
+  "allPartialUnicodeBatchCountsCovered": true,
+  "authenticatedFixture": {
+    "desktopCapture": false,
+    "inputInjection": false,
+    "textNegotiationPassed": true,
+    "unnegotiatedTextRejected": true,
+    "utf16Downs": 3,
+    "utf16Ups": 3
+  },
+  "dedicatedNativeWindow": {
+    "actualSendInput": true,
+    "bmpAndSupplementaryWMCharPassed": true,
+    "utf16Units": 4,
+    "keyDowns": 4,
+    "keyUps": 4,
+    "nativeExit": 0,
+    "inputContentRetained": false
+  },
+  "nativeHelperSHA256": "78d69b15e751d8c5a41e5c027604388b6b548e1c78dec00cd4cf10a3f836e0f6",
+  "physicalAVPKeyboardValidated": false
+}

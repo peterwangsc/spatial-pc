@@ -94,13 +94,14 @@ async def run(directory, fixture, port):
                     if writer:await close(writer)
             assert not (directory/'encoder.log').exists(), 'Capture fixture started before authentication'
 
-            async def session(version=None):
+            async def session(version=None,text_version=None):
                 reader,writer=await connect()
                 tls=writer.get_extra_info('ssl_object')
                 assert tls.version()=='TLSv1.3' and tls.selected_alpn_protocol()=='spatialpc/1'
                 assert hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()==pair['serverSHA256']
                 hello=dict(version=1,codecs=['h264-annexb'],maxWidth=8192,maxHeight=8192)
                 if version is not None:hello['input']={'version':version}
+                if version is not None and text_version is not None:hello['input']['textVersion']=text_version
                 data=json.dumps(hello).encode();writer.write(b'SPC1'+struct.pack('!I',len(data))+data);await writer.drain()
                 header=await asyncio.wait_for(reader.readexactly(8),5);assert header[:4]==b'SPC1'
                 caps=json.loads(await reader.readexactly(struct.unpack('!I',header[4:])[0]))
@@ -129,6 +130,27 @@ async def run(directory, fixture, port):
                 assert 'input' not in caps
                 await frames(reader,3);await close(writer)
                 await asyncio.sleep(.1)
+
+            for text_version in (None,True,1.0,'1',2):
+                reader,writer,caps=await session(1,text_version)
+                assert 'textVersion' not in caps['input']
+                writer.write(Event(5,0,1,0,0,0).wire());await writer.drain()
+                await frames(reader,2)
+                writer.write(Event(8,0,2,0x41,0,0).wire());await writer.drain()
+                try:
+                    await frames(reader,100)
+                    raise AssertionError('Unnegotiated text accepted')
+                except (asyncio.IncompleteReadError,ConnectionError):pass
+                await close(writer)
+                rejected_text=await released();assert rejected_text['downs']==rejected_text['ups']==0
+
+            reader,writer,caps=await session(1,1)
+            assert caps['input']['textVersion']==1
+            for event in [Event(5,0,1,0,0,0),Event(8,0,2,0xE9,0,0),Event(8,0,3,0x1F642,0,0)]:writer.write(event.wire())
+            await writer.drain();await frames(reader,10)
+            writer.write(Event(6,0,4,0,0,0).wire());await writer.drain();await frames(reader,2)
+            await close(writer)
+            text_release=await released();assert text_release['downs']==text_release['ups']==3
 
             reader,writer,caps=await session(1)
             assert caps['input']['wire']=='SPI1'
@@ -173,7 +195,8 @@ async def run(directory, fixture, port):
             await default_view_only(directory/'default-view-only',fixture,port+1)
             result=dict(fixtureOnly=True,desktopCapture=False,inputInjection=False,tls='TLSv1.3',
                         certificateNegatives=True,hostDefaultViewOnly=True,oldClientViewOnly=True,unsupportedVersionViewOnly=True,
-                        duplexVideoFrames=40,disconnectRelease=release,leaseRelease=lease,replayRelease=replay)
+                        duplexVideoFrames=40,disconnectRelease=release,leaseRelease=lease,replayRelease=replay,
+                        textNegotiation=True,unnegotiatedTextRejected=True,textRelease=text_release)
             (directory/'result.json').write_text(json.dumps(result,indent=2)+'\n')
             print(json.dumps(result))
         finally:

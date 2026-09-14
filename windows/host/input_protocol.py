@@ -27,11 +27,15 @@ def supported_usage(value):
     return 0x04 <= value <= 0x45 or 0x49 <= value <= 0x65 or 0xE0 <= value <= 0xE7
 
 
-def decode(record):
+def text_negotiated(offer):
+    return isinstance(offer, dict) and type(offer.get('textVersion')) is int and offer['textVersion'] == 1
+
+
+def decode(record, text_enabled=False):
     if len(record) != RECORD.size:
         raise ValueError('Invalid input record size')
     magic, kind, flags, reserved, sequence, a, b, c = RECORD.unpack(record)
-    if magic != b'SPI1' or reserved or not sequence or not 1 <= kind <= 7:
+    if magic != b'SPI1' or reserved or not sequence or not 1 <= kind <= 8:
         raise ValueError('Invalid input record header')
     allowed_flags = 1 if kind == 2 else 3 if kind == 4 else 0
     if flags & ~allowed_flags:
@@ -45,6 +49,9 @@ def decode(record):
     elif kind == 4:
         if not supported_usage(a) or b or c or flags == 2:
             raise ValueError('Invalid keyboard event')
+    elif kind == 8:
+        if not text_enabled or not 0x20 <= a <= 0x10FFFF or 0x7F <= a <= 0x9F or 0xD800 <= a <= 0xDFFF or b or c:
+            raise ValueError('Invalid text event')
     elif a or b or c:
         raise ValueError('Invalid control event')
     return Event(kind, flags, sequence, a, b, c)
