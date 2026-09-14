@@ -32,6 +32,9 @@ struct DesktopNavigationButton: View {
         Task { @MainActor in
             guard !model.transitionPending else { return }
             model.transitionPending = true
+            #if DEBUG
+            model.stream.stopControl()
+            #endif
             if action == .back {
                 #if DEBUG
                 model.stream.disconnect()

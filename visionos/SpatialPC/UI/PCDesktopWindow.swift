@@ -11,7 +11,7 @@ struct PCDesktopWindow: View {
     private var aspect: CGFloat { CGFloat(model.renderer.dimensions.x) / CGFloat(model.renderer.dimensions.y) }
 
     var body: some View {
-        DesktopMetalSurface(renderer:model.renderer,aspect:aspect)
+        DesktopMetalSurface(model:model,aspect:aspect)
             .frame(minWidth:480,minHeight:480/aspect)
             .ignoresSafeArea()
             .contentShape(Rectangle())
@@ -24,12 +24,18 @@ struct PCDesktopWindow: View {
             }
             .onDisappear {
                 // Closing the desktop must not leave an empty immersive environment.
+                #if DEBUG
+                model.stream.stopControl()
+                #endif
                 guard model.destination == .focus else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
                 }
             }
             .onChange(of:scenePhase,initial:true) { _, phase in
+                #if DEBUG
+                if phase != .active { model.stream.stopControl() }
+                #endif
                 guard phase == .active, model.destination == .desktop else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
@@ -41,9 +47,9 @@ struct PCDesktopWindow: View {
 }
 
 private struct DesktopMetalSurface: UIViewRepresentable {
-    let renderer: SyntheticRenderer
+    let model: AppModel
     let aspect: CGFloat
-    func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(renderer:renderer,aspect:aspect) }
+    func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(model:model,aspect:aspect) }
     func updateUIView(_ view:DesktopMetalView,context:Context) { view.setAspect(aspect) }
     static func dismantleUIView(_ view:DesktopMetalView,coordinator:()) { view.isPaused = true; view.delegate = nil }
 }
@@ -56,9 +62,12 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     private var submittedFrame: UInt64?
     private var submittedSize = CGSize.zero
     private var inFlight = false
+    #if DEBUG
+    private var input: DesktopInputController?
+    #endif
 
-    init(renderer:SyntheticRenderer,aspect:CGFloat) {
-        self.renderer = renderer; self.aspect = aspect
+    init(model:AppModel,aspect:CGFloat) {
+        self.renderer = model.renderer; self.aspect = aspect
         super.init(frame:.zero,device:MTLCreateSystemDefaultDevice())
         colorPixelFormat = .bgra8Unorm
         clearColor = MTLClearColorMake(0,0,0,1)
@@ -66,6 +75,9 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         autoResizeDrawable = true; delegate = self
         isUserInteractionEnabled = true
         addInteraction(UIPointerInteraction(delegate:self))
+        #if DEBUG
+        input = DesktopInputController(view:self,stream:model.stream)
+        #endif
         do {
             guard let device, let library = device.makeDefaultLibrary() else { return }
             let descriptor = MTLRenderPipelineDescriptor()
@@ -79,8 +91,28 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         appliedAspect = nil
-        if window != nil { isPaused = false; applyGeometry() } else { isPaused = true }
+        if window != nil { isPaused = false; applyGeometry() } else {
+            isPaused = true
+            #if DEBUG
+            input?.stop()
+            #endif
+        }
     }
+    #if DEBUG
+    override var canBecomeFirstResponder: Bool { input?.available == true }
+    override func resignFirstResponder() -> Bool { input?.stop(); return super.resignFirstResponder() }
+    override func touchesBegan(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.began) }
+    override func touchesMoved(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.moved) }
+    override func touchesEnded(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.ended) }
+    override func touchesCancelled(_ touches:Set<UITouch>,with event:UIEvent?) { input?.stop() }
+    override func pressesBegan(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
+        if input?.presses(presses,down:true) != true { super.pressesBegan(presses,with:event) }
+    }
+    override func pressesEnded(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
+        if input?.presses(presses,down:false) != true { super.pressesEnded(presses,with:event) }
+    }
+    override func pressesCancelled(_ presses:Set<UIPress>,with event:UIPressesEvent?) { input?.stop() }
+    #endif
     func setAspect(_ value:CGFloat) {
         guard value.isFinite, value > 0 else { return }
         aspect = value; applyGeometry()

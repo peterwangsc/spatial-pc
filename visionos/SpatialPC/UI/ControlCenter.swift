@@ -24,6 +24,13 @@ struct ControlCenter: View {
         false
         #endif
     }
+    private var connectedLabel: String {
+        #if DEBUG
+        model.stream.inputAvailable ? "Connected securely" : "Connected securely · View only"
+        #else
+        "Connected securely · View only"
+        #endif
+    }
     private var connecting: Bool {
         #if DEBUG
         model.stream.active && !streaming
@@ -88,7 +95,7 @@ struct ControlCenter: View {
                         Text(pcName.isEmpty ? "Windows PC" : pcName).font(.title2.bold())
                         HStack(spacing:7) {
                             Circle().fill(streaming ? Color.green : Color.secondary).frame(width:7,height:7)
-                            Text(streaming ? "Connected securely · View only" : connecting ? "Connecting…" : "Selected · Windows")
+                            Text(streaming ? connectedLabel : connecting ? "Connecting…" : "Selected · Windows")
                                 .foregroundStyle(.secondary)
                         }
                         if connecting { ProgressView().controlSize(.small) }

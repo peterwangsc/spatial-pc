@@ -12,6 +12,9 @@ final class AppModel {
     var destination = Destination.devices
     var error: String?
     func handleScenePhase(_ phase: ScenePhase) {
+        #if DEBUG
+        if phase != .active { stream.stopControl() }
+        #endif
         if phase == .background && !transitionPending {
             #if DEBUG
             stream.disconnect()

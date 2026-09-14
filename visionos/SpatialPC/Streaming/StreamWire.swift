@@ -10,6 +10,20 @@ enum StreamWire {
         let height: Int
         let fps: Int
         let hardwareEncoder: Bool
+        let input: InputCapability?
+    }
+    struct InputCapability: Decodable {
+        let version: Int?
+        let enabled: Bool?
+        let wire: String?
+        let recordBytes: Int?
+        let maxEventsPerSecond: Int?
+        let heartbeatMS: Int?
+        let leaseMS: Int?
+        var supported: Bool {
+            version == 1 && enabled == true && wire == "SPI1" && recordBytes == 24 &&
+            maxEventsPerSecond == 240 && heartbeatMS == 500 && leaseMS == 2000
+        }
     }
     static func unsigned(_ bytes: Data) -> UInt64 {
         bytes.reduce(0) { ($0 << 8) | UInt64($1) }
