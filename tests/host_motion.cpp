@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <iostream>
+#include <string>
+#include <thread>
 using Microsoft::WRL::ComPtr;
 void require(HRESULT value) { if(FAILED(value)) throw std::runtime_error("Motion workload D3D failure"); }
 LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
@@ -18,6 +20,7 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR command,int) {
     try {
         const int seconds=std::max(1,std::min(180,_wtoi(command)));
+        const bool idle = std::wstring(command).find(L"--idle") != std::wstring::npos;
         WNDCLASS wc{};wc.lpfnWndProc=windowProc;wc.hInstance=instance;wc.lpszClassName=L"SpatialPCPerformanceWorkload";
         RegisterClass(&wc);
         HWND window=CreateWindowEx(WS_EX_TOPMOST,wc.lpszClassName,L"Spatial PC performance test - Escape to close",WS_POPUP,0,0,GetSystemMetrics(SM_CXSCREEN),GetSystemMetrics(SM_CYSCREEN),nullptr,nullptr,instance,nullptr);
@@ -49,6 +52,10 @@ float4 ps(float4 position:SV_Position):SV_Target {
         auto start=std::chrono::steady_clock::now();bool done=false;UINT frame=0;
         while(!done&&std::chrono::steady_clock::now()-start<std::chrono::seconds(seconds)) {
             MSG message;while(PeekMessage(&message,nullptr,0,0,PM_REMOVE)) { if(message.message==WM_QUIT)done=true;TranslateMessage(&message);DispatchMessage(&message); }
+            if(idle && frame > 0 && std::chrono::steady_clock::now()-start<std::chrono::seconds(3)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue; // Truly idle: stop presenting, not just animating pixels.
+            }
             float values[4]={std::chrono::duration<float>(std::chrono::steady_clock::now()-start).count(),float(desc.BufferDesc.Width),float(desc.BufferDesc.Height),0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             ID3D11RenderTargetView* rt=target.Get();context->OMSetRenderTargets(1,&rt,nullptr);
             D3D11_VIEWPORT viewport{0,0,float(desc.BufferDesc.Width),float(desc.BufferDesc.Height),0,1};context->RSSetViewports(1,&viewport);

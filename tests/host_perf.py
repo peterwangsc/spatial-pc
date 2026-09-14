@@ -52,10 +52,10 @@ def slice_types(data):
     return types
 
 
-def run(executable, args, label, directory, seconds=22):
+def run(executable, args, label, directory, seconds=22, idle=False, stall=0):
     destination = directory / label
     destination.mkdir(exist_ok=True)
-    motion = subprocess.Popen([str(directory / "host_motion.exe"), str(seconds + 3)])
+    motion = subprocess.Popen([str(directory / "host_motion.exe"), str(seconds + 3), *(['--idle'] if idle else [])])
     time.sleep(.5)
     child = None
     frames = []
@@ -84,6 +84,8 @@ def run(executable, args, label, directory, seconds=22):
                         slices[str(kind)] = slices.get(str(kind), 0)+1
                     del data  # Immediately discard image bytes.
                     frames.append((time.perf_counter() - began, pts, size))
+                    if stall and len(frames) == 60:
+                        time.sleep(stall)  # Exercise real bounded pipe backpressure.
             except EOFError:
                 capabilities = locals().get("capabilities", {})
             finally:
@@ -104,6 +106,12 @@ def run(executable, args, label, directory, seconds=22):
               "pipe_arrival_interval_ms": percentiles(intervals), "sample_interval_ms": percentiles(pts_intervals),
               "encoded_bytes": sum(f[2] for f in frames), "last_frame_s": frames[-1][0] if frames else None}
     result['h264_slice_types'] = slices
+    result['idle_workload'] = idle
+    result['reader_stall_s'] = stall
+    if (idle or stall) and pts_intervals:
+        gap = max(range(len(pts_intervals)), key=pts_intervals.__getitem__)
+        result['largest_sample_gap_ms'] = pts_intervals[gap]
+        result['first_60_intervals_after_gap_ms'] = percentiles(pts_intervals[gap+1:gap+61])
     (destination / "result.json").write_text(json.dumps(result, indent=2))
     print(json.dumps(result), flush=True)
     return result
@@ -116,6 +124,8 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=int, default=20)
     parser.add_argument("--prefix", default="")
     parser.add_argument("--variants", nargs='+', default=['original', 'legacy_debug', 'legacy_release', 'optimized'])
+    parser.add_argument("--idle", action='store_true')
+    parser.add_argument("--stall", type=float, default=0)
     options = parser.parse_args()
     root = options.directory.resolve()
     duration = ['--seconds', str(options.seconds)]
@@ -129,4 +139,4 @@ if __name__ == "__main__":
     }
     for label in options.variants:
         executable, args = runs[label]
-        run(executable, args, options.prefix+label, root, seconds=options.seconds+2)
+        run(executable, args, options.prefix+label, root, seconds=options.seconds+2, idle=options.idle, stall=options.stall)

@@ -1,6 +1,6 @@
 # Windows host performance pass — 2026-09-13
 
-The native pacing change reduced local encoded-frame delivery p95 from **34.76 ms to 20.21 ms**, and p99 from **41.39 ms to 22.43 ms**, while maintaining approximately 60 frames/s. This is a preliminary host measurement, not capture-to-photon latency or an integrated Vision Pro result.
+The native pacing change reduced local encoded-frame delivery p95 from **34.76 ms to 20.21 ms**, and p99 from **41.39 ms to 22.43 ms**, while maintaining approximately 60 frames/s. An exact-final-binary repeat confirmed p95 **36.53 to 20.15 ms** and p99 **43.50 to 21.83 ms**; its details are below. These are host measurements, not capture-to-photon latency or an integrated Vision Pro result.
 
 ## Environment and method
 
@@ -59,6 +59,24 @@ Real native pipe readers paused for 0.5 and 6.5 seconds, then resumed. Both sess
 A separate loopback listener with fresh test credentials delivered 316 native frames over authenticated TLS 1.3. Missing-client and untrusted-host tests were rejected before capture started. On an uncontrolled ordinary desktop, sender `sendall` p50/p95/p99 was 0.127/0.231/0.446 ms; Python used about 1.36% of one logical core. This validates local transport behavior, not Wi-Fi or an AVP that decodes slowly. Actual LAN send backpressure and combined headset performance remain for the coordinated live test.
 
 The timing run used candidate SHA-256 `4122f17eb5d9d0234d8748c60df65b6ee1817426bfda2f3b923abfce540b1388`. Subsequent final-source changes retain callback statistics through asynchronous teardown, make timestamp conversion overflow-safe and clarify the capacity-timeout error. Native/unit checks pass, and a second authenticated TLS test delivered 302 frames with the exact final binary while repeating the certificate rejection checks; the JSON separately identifies that binary. The original binary remains preserved (SHA-256 `5042957d22fb027704c7b032f6d68cf8c8ca12d85b2cdf1c0b982199d8d9ff02`). No production release or driver installation was performed.
+
+## Follow-up: exact final binary and recovery
+
+A separately opened, explicitly approved workload window repeated the comparison with the final binary identified in the JSON. Native source was unchanged from commit `68f61ff`; only the test harness gained idle/backpressure modes. All workload/capture processes exited before window completion was reported to Mac. No live listener was replaced or started.
+
+| Variant | Steady FPS | Pipe interval p50 / p95 / p99, ms |
+| --- | ---: | ---: |
+| Preserved original | 59.92 | 15.77 / 36.53 / 43.50 |
+| Final binary, legacy mode | 60.01 | 15.97 / 32.60 / 38.19 |
+| Final binary, optimized default | 59.97 | 16.67 / 20.15 / 21.83 |
+
+The optimized repeat delivered all 1,081 samples with peak pending 1 and zero pending on completion. Acquire-to-encoded p50/p95/p99 was 6.305/10.108/11.873 ms; surface acquisition was 0.012/0.023/0.049 ms. CPU usage was 8.99% of one logical core. Other stage counters and sample counts are preserved in `exact_final_window` in the JSON.
+
+For actual backpressure recovery, the reader paused for 2.5 seconds after receiving 60 samples while the animated source continued. The original resumed with first-60-sample interval p50/p95/p99 **6.860/9.142/9.742 ms**, catching up above the requested frame rate. The final candidate resumed at **16.706/17.202/17.321 ms**, maintaining its approximately 60 FPS cadence. No encoded access units were intentionally discarded.
+
+A separate `--idle` workload stopped presenting after its first frame until three seconds elapsed. Unrelated desktop updates still reached capture, and the largest observed capture gap was only about 65 ms. This attempt therefore does **not** verify a truly idle desktop or a long capture timeout; it is retained as a limitation. Idle-deadline rebasing is covered by the native test, and long-gap recovery is demonstrated by the real backpressure test above.
+
+The harness accepts `--idle` for that no-present workload and `--stall 2.5` for a reader stall. Do not compare idle/stall aggregate percentiles to continuous-motion percentiles without considering their deliberate gaps. Installer handoff requirements are in [windows-installer-requirements.md](windows-installer-requirements.md); no installer or public binary release is claimed.
 
 ## Reproduction
 
