@@ -20,5 +20,26 @@
     "inputContentRetained": false
   },
   "nativeHelperSHA256": "78d69b15e751d8c5a41e5c027604388b6b548e1c78dec00cd4cf10a3f836e0f6",
+  "actualLANValidation": {
+    "hostRevision": "18eaf7176a155b9420bbcd4a09be8b1465e33a31",
+    "sender": "Mac Python probe",
+    "tls": "TLSv1.3",
+    "textVersion": 1,
+    "textScalars": 3,
+    "windowsCharacterUnits": 4,
+    "windowsSequenceMatched": true,
+    "unicodeKeyDowns": 4,
+    "unicodeKeyUps": 4,
+    "unexpectedEvents": 0,
+    "controlRecords": 6,
+    "videoFrames": 77,
+    "videoAfterStop": 28,
+    "nativeExit": 0,
+    "leaseExpired": false,
+    "childrenRemainingAfterDisconnect": 0,
+    "pointerHIDEvents": 0,
+    "pixelFilesWritten": 0,
+    "firstObserverAttemptSentNoInput": true
+  },
   "physicalAVPKeyboardValidated": false
 }
