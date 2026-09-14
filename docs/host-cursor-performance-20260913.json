@@ -1,0 +1,574 @@
+{
+  "before_native_sha256": "a00e2aa2d43c667fa9bfa55cf075a3f8e95957c48241ab7c2930d5adc67fa04f",
+  "candidate_native_sha256": "97f5560ffdfd2fd5050c18f46d28ae096c4db9887ab85446daa19193bc128334",
+  "capture_seconds": 20,
+  "run_order": [
+    "before_cursor",
+    "after_cursor",
+    "after_cursor_repeat",
+    "before_cursor_repeat"
+  ],
+  "runs": [
+    {
+      "label": "before_cursor",
+      "capabilities": {
+        "version": 1,
+        "codec": "h264-annexb",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "hardwareEncoder": true
+      },
+      "frames": 1201,
+      "first_frame_s": 0.31504300000233343,
+      "steady_fps": 59.985529135124416,
+      "pipe_arrival_interval_ms": {
+        "n": 1200,
+        "p50": 16.74569999886444,
+        "p95": 19.88540000456851,
+        "p99": 21.423799997137394
+      },
+      "sample_interval_ms": {
+        "n": 1200,
+        "p50": 16.6609,
+        "p95": 17.1018,
+        "p99": 17.3199
+      },
+      "encoded_bytes": 45061528,
+      "last_frame_s": 20.314623400001437,
+      "h264_slice_types": {
+        "2": 21,
+        "0": 1180
+      },
+      "idle_workload": false,
+      "reader_stall_s": 0,
+      "native": {
+        "elapsed_s": 20.2565,
+        "inputs": 1201,
+        "outputs": 1201,
+        "cpu_core_percent": 10.5676,
+        "encoded_fps": 59.2896,
+        "encoded_bytes": 45061528,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1700,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1201,
+            "p50": 6.3624,
+            "p95": 9.8166,
+            "p99": 11.4678,
+            "max": 13.4252
+          },
+          "capacity_wait_ms": {
+            "n": 1201,
+            "p50": 0.0006,
+            "p95": 0.001,
+            "p99": 0.0013,
+            "max": 0.0242
+          },
+          "capture_wait_ms": {
+            "n": 1201,
+            "p50": 0.0627,
+            "p95": 0.23,
+            "p99": 0.3433,
+            "max": 0.5204
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1201,
+            "p50": 0.4782,
+            "p95": 1.0345,
+            "p99": 1.3918,
+            "max": 7.8299
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1201,
+            "p50": 0.2509,
+            "p95": 0.3783,
+            "p99": 1.2698,
+            "max": 3.3628
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1201,
+            "p50": 3.1108,
+            "p95": 6.3152,
+            "p99": 7.1973,
+            "max": 7.52
+          },
+          "encoded_interval_ms": {
+            "n": 1200,
+            "p50": 16.753,
+            "p95": 19.8867,
+            "p99": 21.4907,
+            "max": 24.0392
+          },
+          "pacing_wait_ms": {
+            "n": 1201,
+            "p50": 16.0233,
+            "p95": 16.5588,
+            "p99": 16.7287,
+            "max": 17.0431
+          },
+          "pipe_write_ms": {
+            "n": 1201,
+            "p50": 0.0911,
+            "p95": 0.1665,
+            "p99": 0.2759,
+            "max": 0.579
+          },
+          "submit_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.9035,
+            "p95": 9.3281,
+            "p99": 10.997,
+            "max": 13.0198
+          },
+          "surface_acquire_ms": {
+            "n": 1201,
+            "p50": 0.0137,
+            "p95": 0.0251,
+            "p99": 0.0445,
+            "max": 0.4182
+          },
+          "write_sample_ms": {
+            "n": 1201,
+            "p50": 0.0184,
+            "p95": 0.044,
+            "p99": 0.1263,
+            "max": 0.323
+          }
+        }
+      },
+      "cursor": {
+        "texture_allocations_from_log": 401
+      }
+    },
+    {
+      "label": "after_cursor",
+      "capabilities": {
+        "version": 1,
+        "codec": "h264-annexb",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "hardwareEncoder": true
+      },
+      "frames": 1201,
+      "first_frame_s": 0.30412950000027195,
+      "steady_fps": 59.99714163054484,
+      "pipe_arrival_interval_ms": {
+        "n": 1200,
+        "p50": 16.693699995812494,
+        "p95": 20.31130000250414,
+        "p99": 22.224000000278465
+      },
+      "sample_interval_ms": {
+        "n": 1200,
+        "p50": 16.6725,
+        "p95": 17.0786,
+        "p99": 17.2113
+      },
+      "encoded_bytes": 44896941,
+      "last_frame_s": 20.29997100000037,
+      "h264_slice_types": {
+        "2": 21,
+        "0": 1180
+      },
+      "idle_workload": false,
+      "reader_stall_s": 0,
+      "native": {
+        "elapsed_s": 20.2382,
+        "inputs": 1201,
+        "outputs": 1201,
+        "cpu_core_percent": 6.1764,
+        "encoded_fps": 59.3432,
+        "encoded_bytes": 44896941,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1698,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.9106,
+            "p95": 9.612,
+            "p99": 11.2076,
+            "max": 12.335
+          },
+          "capacity_wait_ms": {
+            "n": 1201,
+            "p50": 0.0004,
+            "p95": 0.0008,
+            "p99": 0.0009,
+            "max": 0.058
+          },
+          "capture_wait_ms": {
+            "n": 1201,
+            "p50": 0.051,
+            "p95": 0.174,
+            "p99": 0.2889,
+            "max": 0.4658
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1201,
+            "p50": 0.3604,
+            "p95": 0.8166,
+            "p99": 1.1828,
+            "max": 7.5562
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1201,
+            "p50": 0.1659,
+            "p95": 0.1925,
+            "p99": 0.3185,
+            "max": 2.8948
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1201,
+            "p50": 3.0115,
+            "p95": 6.1981,
+            "p99": 7.1811,
+            "max": 7.7115
+          },
+          "encoded_interval_ms": {
+            "n": 1200,
+            "p50": 16.6796,
+            "p95": 20.2882,
+            "p99": 21.9808,
+            "max": 23.6791
+          },
+          "pacing_wait_ms": {
+            "n": 1201,
+            "p50": 16.1575,
+            "p95": 16.6245,
+            "p99": 16.7623,
+            "max": 16.98
+          },
+          "pipe_write_ms": {
+            "n": 1201,
+            "p50": 0.0743,
+            "p95": 0.1556,
+            "p99": 0.2562,
+            "max": 0.4975
+          },
+          "submit_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.5597,
+            "p95": 9.3067,
+            "p99": 10.8323,
+            "max": 12.0254
+          },
+          "surface_acquire_ms": {
+            "n": 1201,
+            "p50": 0.0114,
+            "p95": 0.0239,
+            "p99": 0.0553,
+            "max": 0.3307
+          },
+          "write_sample_ms": {
+            "n": 1201,
+            "p50": 0.0153,
+            "p95": 0.0587,
+            "p99": 0.1589,
+            "max": 0.2544
+          }
+        }
+      },
+      "cursor": {
+        "shape_notifications": 401,
+        "shape_uploads": 401,
+        "texture_allocations": 1,
+        "duplicate_shapes": 0,
+        "composited_frames": 1201
+      }
+    },
+    {
+      "label": "after_cursor_repeat",
+      "capabilities": {
+        "version": 1,
+        "codec": "h264-annexb",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "hardwareEncoder": true
+      },
+      "frames": 1201,
+      "first_frame_s": 0.261350400003721,
+      "steady_fps": 60.00113134439962,
+      "pipe_arrival_interval_ms": {
+        "n": 1200,
+        "p50": 16.71889999852283,
+        "p95": 20.271900000807364,
+        "p99": 22.223700005270075
+      },
+      "sample_interval_ms": {
+        "n": 1200,
+        "p50": 16.663,
+        "p95": 17.0849,
+        "p99": 17.3665
+      },
+      "encoded_bytes": 44795057,
+      "last_frame_s": 20.262838500006183,
+      "h264_slice_types": {
+        "2": 21,
+        "0": 1180
+      },
+      "idle_workload": false,
+      "reader_stall_s": 0,
+      "native": {
+        "elapsed_s": 20.2404,
+        "inputs": 1201,
+        "outputs": 1201,
+        "cpu_core_percent": 10.2672,
+        "encoded_fps": 59.3369,
+        "encoded_bytes": 44795057,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1696,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.83,
+            "p95": 9.7816,
+            "p99": 11.3799,
+            "max": 15.0237
+          },
+          "capacity_wait_ms": {
+            "n": 1201,
+            "p50": 0.0004,
+            "p95": 0.0008,
+            "p99": 0.0011,
+            "max": 0.0253
+          },
+          "capture_wait_ms": {
+            "n": 1201,
+            "p50": 0.0545,
+            "p95": 0.1723,
+            "p99": 0.2971,
+            "max": 0.3913
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1201,
+            "p50": 0.3714,
+            "p95": 0.8166,
+            "p99": 1.1257,
+            "max": 1.9195
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1201,
+            "p50": 0.1679,
+            "p95": 0.1956,
+            "p99": 0.3604,
+            "max": 0.8499
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1201,
+            "p50": 3.1752,
+            "p95": 6.2131,
+            "p99": 6.5953,
+            "max": 7.4724
+          },
+          "encoded_interval_ms": {
+            "n": 1200,
+            "p50": 16.7214,
+            "p95": 20.347,
+            "p99": 22.2522,
+            "max": 24.4109
+          },
+          "pacing_wait_ms": {
+            "n": 1201,
+            "p50": 16.1473,
+            "p95": 16.6372,
+            "p99": 16.7866,
+            "max": 17.3734
+          },
+          "pipe_write_ms": {
+            "n": 1201,
+            "p50": 0.0781,
+            "p95": 0.1627,
+            "p99": 0.2902,
+            "max": 0.5686
+          },
+          "submit_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.5278,
+            "p95": 9.3976,
+            "p99": 10.9704,
+            "max": 14.7718
+          },
+          "surface_acquire_ms": {
+            "n": 1201,
+            "p50": 0.0117,
+            "p95": 0.0231,
+            "p99": 0.0469,
+            "max": 0.5245
+          },
+          "write_sample_ms": {
+            "n": 1201,
+            "p50": 0.0155,
+            "p95": 0.085,
+            "p99": 0.1778,
+            "max": 0.3844
+          }
+        }
+      },
+      "cursor": {
+        "shape_notifications": 401,
+        "shape_uploads": 401,
+        "texture_allocations": 1,
+        "duplicate_shapes": 0,
+        "composited_frames": 1201
+      }
+    },
+    {
+      "label": "before_cursor_repeat",
+      "capabilities": {
+        "version": 1,
+        "codec": "h264-annexb",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "hardwareEncoder": true
+      },
+      "frames": 1201,
+      "first_frame_s": 0.26732410000113305,
+      "steady_fps": 59.980836399595184,
+      "pipe_arrival_interval_ms": {
+        "n": 1200,
+        "p50": 16.700799998943694,
+        "p95": 20.034199995279778,
+        "p99": 22.001199999067467
+      },
+      "sample_interval_ms": {
+        "n": 1200,
+        "p50": 16.6576,
+        "p95": 17.1133,
+        "p99": 17.3231
+      },
+      "encoded_bytes": 45058778,
+      "last_frame_s": 20.272484400004032,
+      "h264_slice_types": {
+        "2": 21,
+        "0": 1180
+      },
+      "idle_workload": false,
+      "reader_stall_s": 0,
+      "native": {
+        "elapsed_s": 20.2524,
+        "inputs": 1201,
+        "outputs": 1201,
+        "cpu_core_percent": 10.9555,
+        "encoded_fps": 59.3016,
+        "encoded_bytes": 45058778,
+        "pending": 0,
+        "peak_pending": 1,
+        "dxgi_coalesced": 1699,
+        "capture_timeouts": 0,
+        "unmatched_samples": 0,
+        "metrics": {
+          "acquire_to_encoded_ms": {
+            "n": 1201,
+            "p50": 6.1227,
+            "p95": 9.7018,
+            "p99": 11.6656,
+            "max": 13.9247
+          },
+          "capacity_wait_ms": {
+            "n": 1201,
+            "p50": 0.0005,
+            "p95": 0.0009,
+            "p99": 0.0012,
+            "max": 0.0071
+          },
+          "capture_wait_ms": {
+            "n": 1201,
+            "p50": 0.058,
+            "p95": 0.1919,
+            "p99": 0.2772,
+            "max": 0.4503
+          },
+          "cursor_convert_cpu_ms": {
+            "n": 1201,
+            "p50": 0.4374,
+            "p95": 1.0122,
+            "p99": 1.3529,
+            "max": 1.7603
+          },
+          "cursor_convert_gpu_ms": {
+            "n": 1201,
+            "p50": 0.2519,
+            "p95": 0.5745,
+            "p99": 2.4402,
+            "max": 6.23
+          },
+          "desktop_age_at_acquire_ms": {
+            "n": 1201,
+            "p50": 2.9536,
+            "p95": 6.1886,
+            "p99": 7.1843,
+            "max": 7.6916
+          },
+          "encoded_interval_ms": {
+            "n": 1200,
+            "p50": 16.7233,
+            "p95": 20.0243,
+            "p99": 22.0448,
+            "max": 24.4566
+          },
+          "pacing_wait_ms": {
+            "n": 1201,
+            "p50": 16.0522,
+            "p95": 16.59,
+            "p99": 16.7884,
+            "max": 17.0286
+          },
+          "pipe_write_ms": {
+            "n": 1201,
+            "p50": 0.0837,
+            "p95": 0.1581,
+            "p99": 0.2476,
+            "max": 0.4881
+          },
+          "submit_to_encoded_ms": {
+            "n": 1201,
+            "p50": 5.6932,
+            "p95": 9.3499,
+            "p99": 11.1191,
+            "max": 13.5339
+          },
+          "surface_acquire_ms": {
+            "n": 1201,
+            "p50": 0.0127,
+            "p95": 0.0242,
+            "p99": 0.0436,
+            "max": 0.1893
+          },
+          "write_sample_ms": {
+            "n": 1201,
+            "p50": 0.0172,
+            "p95": 0.0594,
+            "p99": 0.1688,
+            "max": 0.4408
+          }
+        }
+      },
+      "cursor": {
+        "texture_allocations_from_log": 401
+      }
+    }
+  ],
+  "tls_smoke": {
+    "tls": "TLSv1.3",
+    "loopback": true,
+    "authenticated_native_frames": 322,
+    "encoded_bytes": 4337883,
+    "missing_client_rejected": true,
+    "untrusted_host_rejected": true,
+    "capture_only_after_auth": true
+  }
+}

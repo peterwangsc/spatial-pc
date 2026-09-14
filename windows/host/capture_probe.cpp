@@ -136,9 +136,9 @@ int wmain(int argc,wchar_t** argv) {
    check(sample->SetSampleTime(timestamp),"Sample time");check(sample->SetSampleDuration(10000000/fps),"Sample duration");
    if(streaming)stats.input(timestamp,acquired,info.AccumulatedFrames);
    begin=std::chrono::steady_clock::now();check(writer->WriteSample(stream,sample.Get()),"WriteSample");const auto submitted=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();submitMs+=submitted;stats.add("write_sample_ms",submitted);frames++;
-   if(std::chrono::steady_clock::now()>=nextReport){stats.report();nextReport=std::chrono::steady_clock::now()+std::chrono::seconds(5);}
+   if(std::chrono::steady_clock::now()>=nextReport){stats.report();cursor.report();nextReport=std::chrono::steady_clock::now()+std::chrono::seconds(5);}
   }
-  check(writer->Finalize(),"Finalize");gpuTimings.collect();stats.report();double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
+  check(writer->Finalize(),"Finalize");gpuTimings.collect();stats.report();cursor.report();double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
   std::cerr<<"frames="<<frames<<" elapsed_s="<<seconds<<" captured_fps="<<frames/seconds<<" capture_wait_avg_ms="<<(frames?captureMs/frames:0)<<" encode_submit_avg_ms="<<(frames?submitMs/frames:0)<<" timeouts="<<timeouts<<"\n";
   if(!frames)return 3;return 0;
  }catch(const std::exception& e){std::cerr<<"probe_failed="<<e.what()<<"\n";return 1;}
