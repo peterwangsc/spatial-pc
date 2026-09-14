@@ -30,3 +30,11 @@ Texture updates and draws use the same immediate D3D11 context. The default-usag
 All 31 GPU checks passed, covering colored, masked and monochrome pointers, hidden and offscreen pointers, negative/right/bottom clipping, movement restoration, duplicate suppression, resource reuse, and composition over a varied background. The CPU reference permits one UNORM least-significant bit for floating-point color alpha blending; copy, masked XOR and monochrome checks are exact.
 
 A fresh loopback TLS 1.3 test decoded the wire framing for 322 native encoded frames, checked increasing timestamps and frame bounds, and rejected missing-client and untrusted-host certificates before capture began. It did not decode pixels. The SPC1 protocol, certificate authentication, existing sample-pool ownership, admission limits and transport deadlines are unchanged. Physical headset validation of this exact cursor candidate remains separate from these local measurements.
+
+## Exact candidate LAN decode check
+
+The same candidate binary then served 600 frames to the Mac's optimized native BGRA VideoToolbox probe over the existing mutually authenticated TLS 1.3 LAN connection. All 600 decoded in hardware; decode p50/p95/p99 was **2.776/4.396/6.083 ms**. Missing-client and untrusted-host certificate checks passed. This used an uncontrolled ordinary desktop, not the motion workload or a physical headset.
+
+The matched sender logged 601 frames over 15.737 seconds; its extra frame was sent before client disconnect. TLS send p50/p95/p99 was 0.122/0.211/1.187 ms, maximum 96.388 ms. Client arrival p95/p99 was 59.760/68.103 ms and sender pipe-read p95/p99 was 58.743/66.184 ms. The native 15.332-second periodic snapshot, which stops before the session's last frames, recorded acquire-to-encoded p95 35.233 ms, peak pending 2, and one pointer texture allocation. These ordinary-desktop gaps remain and cannot be compared directly with the controlled motion percentiles.
+
+The first send stalled; median relative timeline drift subsequently became negative on both sender and receiver. This is a first-sample reference effect, not negative network latency. Full client and matched host metadata are appended to the JSON companion. Simulator and worn-headset checks remain separate from this native Mac decoder result.

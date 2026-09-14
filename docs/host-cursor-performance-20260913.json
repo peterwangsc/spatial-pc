@@ -570,5 +570,171 @@
     "missing_client_rejected": true,
     "untrusted_host_rejected": true,
     "capture_only_after_auth": true
+  },
+  "lan_native_decode": {
+    "workload": "uncontrolled ordinary desktop; no competing capture",
+    "client": {
+      "arrivalIntervalMS": {
+        "count": 599,
+        "max": 78.982208,
+        "min": 1.423833,
+        "p50": 22.086334,
+        "p95": 59.7595,
+        "p99": 68.103
+      },
+      "boundary": "local receive plus decode; not headset display latency",
+      "decoded": 600,
+      "decodeP50MS": 2.776292,
+      "decodeP95MS": 4.395583,
+      "decodeP99MS": 6.082875,
+      "driftBoundary": "relative to first payload arrival and host timestamp; includes sender, network and pipe scheduling; not absolute one-way latency",
+      "elapsedSeconds": 15.608379792000001,
+      "hardware": true,
+      "height": 1080,
+      "relativeArrivalTimelineDriftMS": {
+        "count": 600,
+        "max": 42.133133,
+        "min": -100.8768419999999,
+        "p50": -91.68909200000053,
+        "p95": -63.938592000000426,
+        "p99": -43.29741700000068
+      },
+      "width": 1920
+    },
+    "transport": {
+      "frames": 601,
+      "encodedBytes": 7780664,
+      "elapsed_s": 15.736928099999204,
+      "cpu_core_percent": 0.5957325305439042,
+      "metrics": {
+        "pipe_read_wait_ms": {
+          "n": 601,
+          "p50": 21.52119999664137,
+          "p95": 58.74279999989085,
+          "p99": 66.18370000069262,
+          "max": 74.77249999647029
+        },
+        "tls_send_ms": {
+          "n": 601,
+          "p50": 0.12180000339867547,
+          "p95": 0.210899997910019,
+          "p99": 1.1870000016642734,
+          "max": 96.38840000116033
+        },
+        "send_timeline_drift_ms": {
+          "n": 601,
+          "p50": -90.88900000227841,
+          "p95": -64.26800000322874,
+          "p99": -51.14720000310626,
+          "max": 0.0
+        }
+      }
+    },
+    "native_snapshot": {
+      "elapsed_s": 15.3315,
+      "inputs": 575,
+      "outputs": 574,
+      "cpu_core_percent": 5.6053,
+      "encoded_fps": 37.4393,
+      "encoded_bytes": 7238927,
+      "pending": 1,
+      "peak_pending": 2,
+      "dxgi_coalesced": 8,
+      "capture_timeouts": 0,
+      "unmatched_samples": 0,
+      "metrics": {
+        "acquire_to_encoded_ms": {
+          "n": 574,
+          "p50": 8.9363,
+          "p95": 35.2332,
+          "p99": 47.0881,
+          "max": 53.4671
+        },
+        "capacity_wait_ms": {
+          "n": 575,
+          "p50": 0.0005,
+          "p95": 0.0008,
+          "p99": 0.001,
+          "max": 0.2312
+        },
+        "capture_wait_ms": {
+          "n": 575,
+          "p50": 13.0538,
+          "p95": 32.8462,
+          "p99": 42.3309,
+          "max": 47.1252
+        },
+        "cursor_convert_cpu_ms": {
+          "n": 575,
+          "p50": 0.4517,
+          "p95": 0.7909,
+          "p99": 1.0102,
+          "max": 1.8463
+        },
+        "cursor_convert_gpu_ms": {
+          "n": 574,
+          "p50": 0.2191,
+          "p95": 0.2744,
+          "p99": 0.3656,
+          "max": 0.4618
+        },
+        "desktop_age_at_acquire_ms": {
+          "n": 575,
+          "p50": 0.123,
+          "p95": 5.3183,
+          "p99": 10.8128,
+          "max": 16.363
+        },
+        "encoded_interval_ms": {
+          "n": 573,
+          "p50": 21.9477,
+          "p95": 58.9408,
+          "p99": 66.2024,
+          "max": 74.8234
+        },
+        "pacing_wait_ms": {
+          "n": 575,
+          "p50": 14.7662,
+          "p95": 16.6058,
+          "p99": 16.7471,
+          "max": 17.0667
+        },
+        "pipe_write_ms": {
+          "n": 574,
+          "p50": 0.0245,
+          "p95": 0.1268,
+          "p99": 0.2444,
+          "max": 0.4869
+        },
+        "submit_to_encoded_ms": {
+          "n": 574,
+          "p50": 8.5128,
+          "p95": 34.5786,
+          "p99": 46.6514,
+          "max": 53.1281
+        },
+        "surface_acquire_ms": {
+          "n": 575,
+          "p50": 0.0146,
+          "p95": 0.0262,
+          "p99": 0.0542,
+          "max": 0.1363
+        },
+        "write_sample_ms": {
+          "n": 575,
+          "p50": 0.0176,
+          "p95": 0.0436,
+          "p99": 0.1804,
+          "max": 0.3231
+        }
+      }
+    },
+    "cursor_snapshot": {
+      "shape_notifications": 1,
+      "shape_uploads": 1,
+      "texture_allocations": 1,
+      "duplicate_shapes": 0,
+      "composited_frames": 575
+    }
   }
 }
