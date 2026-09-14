@@ -18,7 +18,7 @@ The current defensive allocation bound is 16 MiB per access unit and 16,777,216 
 
 ## Backpressure and limits
 
-The client receives and decodes one access unit at a time. The renderer permits one GPU copy in flight and skips presentation if busy, while still decoding reference frames. TCP provides integrity/order but can accumulate latency under loss or congestion. Native encoder and OS socket buffers are not yet measured or bounded as a complete pipeline. This transport establishes feasibility; it does not meet the final latency goal by assumption.
+The client receives and decodes one access unit at a time. The native window samples the latest decoded surface directly and permits one presentation command in flight; it skips busy presentation ticks while still decoding reference frames. Focus retains the same window and presentation path. TCP provides integrity/order but can accumulate latency under loss or congestion. Native encoder and OS socket buffers are not yet measured or bounded as a complete pipeline. This transport establishes feasibility; it does not meet the final latency goal by assumption.
 
 The host starts capture only after mutual authentication, times out stalled network operations, ends each experiment after ten minutes, and terminates its capture child on disconnect. It currently serves one physical display through a single connection. Bonjour selection, first-run pairing, display enumeration, reconnect, keyframe requests, adaptive bitrate, audio and input are still incomplete.
 

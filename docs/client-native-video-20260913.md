@@ -1,6 +1,6 @@
 # Native video surfaces — September 13, 2026
 
-The client requests hardware-decoded NV12 surfaces, samples their luma/chroma planes directly in the window, and converts them in a single Metal compute pass for RealityKit Focus. This removes the decoder’s BGRA conversion. Both paths retain Core Video buffers and their Metal mappings through GPU completion, with the existing bounded latest-frame ownership. BGRA and the synthetic preview remain supported by the renderer.
+The client requests hardware-decoded NV12 surfaces and samples their luma/chroma planes directly in the window. The initial implementation also provided one Metal conversion pass for the RealityKit Focus display. The subsequent [Focus revision](focus-environment.md) retains the native desktop window in Focus and does not activate that copy path. This removes the decoder’s BGRA conversion. Both paths retain Core Video buffers and their Metal mappings through GPU completion, with the existing bounded latest-frame ownership. BGRA and the synthetic preview remain supported by the renderer.
 
 ## Measurements and validation
 
