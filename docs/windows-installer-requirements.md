@@ -1,6 +1,11 @@
 # Windows host packaging handoff
 
-Status: requirements for a future downloadable host, **not an installer-ready announcement**. Mac owns the dedicated `peterwang.tech/spatial-pc` page and website repository. Windows owns the host artifact, installation behavior and release metadata.
+This is the original capture-harness packaging plan. The consumer host, pairing
+flow and isolated installer have since been implemented; see
+[Windows host](windows-host.md) for current behavior and remaining release gates.
+The historical candidate descriptions below are not the current feature status.
+Mac owns the dedicated `peterwang.tech/spatial-pc` page and website repository.
+Windows owns the host artifact, installation behavior and release metadata.
 
 ## Candidate and dependencies
 

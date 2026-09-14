@@ -33,8 +33,12 @@ bool sameDisplay(const InputGeometry& expected) {
 int wmain(int argc,wchar_t** argv) {
     std::unique_ptr<InputEngine> engine;
     try {
-        const bool textEnabled=argc==6&&std::wstring(argv[5])==L"--enable-text";
-        if((argc!=5&&!textEnabled)||std::wstring(argv[1])!=L"--width"||std::wstring(argv[3])!=L"--height")throw std::runtime_error("Input bridge arguments invalid");
+        if(argc<5||std::wstring(argv[1])!=L"--width"||std::wstring(argv[3])!=L"--height")throw std::runtime_error("Input bridge arguments invalid");
+        bool textEnabled=false,continuous=false;
+        for(int i=5;i<argc;++i){const std::wstring option=argv[i];
+            if(option==L"--enable-text"&&!textEnabled)textEnabled=true;
+            else if(option==L"--until-owner-exits"&&!continuous)continuous=true;
+            else throw std::runtime_error("Input bridge arguments invalid");}
         const int width=std::stoi(argv[2]),height=std::stoi(argv[4]);
         if(width<2||height<2||width>8192||height>8192)throw std::runtime_error("Input display bounds invalid");
         if(!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))throw std::runtime_error("Input DPI context unavailable");
@@ -46,7 +50,7 @@ int wmain(int argc,wchar_t** argv) {
         std::array<uint8_t,24> record{};DWORD used=0;
         const auto started=GetTickCount64();auto refill=started,partial=started,desktopCheck=started;
         double tokens=120;
-        while(GetTickCount64()-started<600000) {
+        while(continuous||GetTickCount64()-started<600000) {
             const auto now=GetTickCount64();
             if(engine->expired(now))throw std::runtime_error("Input lease expired");
             if(used&&now-partial>=2000)throw std::runtime_error("Partial input record expired");

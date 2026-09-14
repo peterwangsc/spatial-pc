@@ -1,0 +1,35 @@
+Spatial PC Windows host
+
+Spatial PC source is MIT licensed; see LICENSE.txt.
+
+Python 3.14.7 is distributed under the Python Software Foundation license and
+included third-party notices. See runtime/LICENSE.txt and
+https://www.python.org/downloads/release/python-3147/ . The official x64 embedded
+runtime is bundled without installing Python, pip, or developer tools globally.
+
+cryptography 50.0.1: Apache License 2.0 or BSD 3-Clause, with included dependency
+notices. See runtime/Lib/site-packages/cryptography-50.0.1.dist-info/licenses/ and
+https://pypi.org/project/cryptography/50.0.1/ .
+
+cffi 2.1.1: MIT license. See its bundled dist-info/licenses directory and
+https://pypi.org/project/cffi/2.1.1/ .
+
+pycparser 3.0: BSD 3-Clause license. See its bundled dist-info/licenses directory
+and https://pypi.org/project/pycparser/3.0/ .
+
+ifaddr 0.2.0: MIT license. See its bundled dist-info/LICENSE.txt and
+https://pypi.org/project/ifaddr/0.2.0/ .
+
+zeroconf 0.151.3: GNU Lesser General Public License 2.1 or later. Its license is
+included in runtime/Lib/site-packages/zeroconf-0.151.3.dist-info/licenses/ .
+Unmodified corresponding source is available at
+https://pypi.org/project/zeroconf/0.151.3/#files . The installed module is a
+separate, replaceable component in runtime/Lib/site-packages. Distribution must
+include the corresponding source archive in the source directory beside these
+notices. No restriction is imposed on replacing or debugging this LGPL component.
+
+Windows Forms and .NET Framework are Windows platform components, not separately
+redistributed by this package. Windows 11 x64 is required.
+
+Installer technology: Inno Setup 6.7.3, copyright Jordan Russell and Martijn Laan.
+License and source: https://github.com/jrsoftware/issrc/tree/is-6_7_3 .

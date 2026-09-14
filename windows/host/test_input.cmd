@@ -7,5 +7,7 @@ cl /nologo /std:c++20 /EHsc /O2 /W4 tests\input_engine.cpp /Fe:.local\input_engi
 if errorlevel 1 exit /b %errorlevel%
 .local\input_engine.exe
 if errorlevel 1 exit /b %errorlevel%
-cl /nologo /std:c++20 /EHsc /O2 /W4 tests\input_fixture.cpp /Fe:.local\input_fixture.exe /Fo:.local\input_fixture.obj
+set "fixture=.local\input_fixture.exe"
+if not "%~1"=="" set "fixture=%~1"
+cl /nologo /std:c++20 /EHsc /O2 /W4 tests\input_fixture.cpp /Fe:"%fixture%" /Fo:"%fixture%.obj"
 exit /b %errorlevel%

@@ -24,12 +24,13 @@ void check(HRESULT hr,const char* where) { if(FAILED(hr)) {std::cerr<<where<<" H
 #include "EncoderSettings.h"
 #include "VideoSurfaces.h"
 #include "CursorCompositor.h"
+#include "CapturePipeOwner.h"
 struct FrameLease { IDXGIOutputDuplication* output; ~FrameLease(){output->ReleaseFrame();} };
 int wmain(int argc,wchar_t** argv) {
  try {
   if(argc<2) {std::cerr<<"Usage: capture_probe.exe PRIVATE_OUTPUT.mp4 | --stream [--seconds N] [--legacy] [--no-pool] [--no-codec-config] [--unthrottled] [--trace-events]\n";return 2;}
   const bool streaming = std::wstring(argv[1]) == L"--stream";
-  bool legacy=false,pool=true,configure=true,unthrottled=false,traceEvents=false;int duration=streaming?600:12;
+  bool legacy=false,pool=true,configure=true,unthrottled=false,traceEvents=false,continuous=false,secondsSet=false;int duration=streaming?600:12;
   for(int i=2;i<argc;++i) {
    const std::wstring option=argv[i];
    if(option==L"--legacy") legacy=true;
@@ -37,13 +38,16 @@ int wmain(int argc,wchar_t** argv) {
    else if(option==L"--no-codec-config") configure=false;
    else if(option==L"--unthrottled") unthrottled=true;
    else if(option==L"--trace-events") traceEvents=true;
-   else if(option==L"--seconds"&&i+1<argc) duration=std::stoi(argv[++i]);
+   else if(option==L"--until-owner-exits"&&!continuous) continuous=true;
+   else if(option==L"--seconds"&&i+1<argc) {duration=std::stoi(argv[++i]);secondsSet=true;}
    else throw std::runtime_error("Unknown capture option");
   }
-  if(duration<1||duration>600||(!streaming&&unthrottled)) throw std::runtime_error("Invalid capture limits");
+  if(duration<1||duration>600||(!streaming&&unthrottled)||
+     (continuous&&(!streaming||secondsSet||GetFileType(GetStdHandle(STD_OUTPUT_HANDLE))!=FILE_TYPE_PIPE))) throw std::runtime_error("Invalid capture limits");
+  CapturePipeOwner owner(continuous);
   if(legacy) {pool=false;configure=false;unthrottled=false;}
   auto statsOwner=std::make_shared<PerfStats>(traceEvents);auto& stats=*statsOwner;
-  std::cerr<<"capture_options legacy="<<legacy<<" pool="<<pool<<" codec_config="<<configure<<" unthrottled="<<unthrottled<<" max_inflight="<<(legacy?0:4)<<" seconds="<<duration<<"\n";
+  std::cerr<<"capture_options legacy="<<legacy<<" pool="<<pool<<" codec_config="<<configure<<" unthrottled="<<unthrottled<<" max_inflight="<<(legacy?0:4)<<" continuous="<<continuous<<" seconds="<<(continuous?0:duration)<<"\n";
   if (streaming) _setmode(_fileno(stdout), _O_BINARY);
   check(CoInitializeEx(nullptr,COINIT_MULTITHREADED),"CoInitializeEx");
   check(MFStartup(MF_VERSION),"MFStartup");
@@ -106,7 +110,7 @@ int wmain(int argc,wchar_t** argv) {
   GpuTimings gpuTimings(device.Get(),context.Get(),stats);
   UINT frames=0,timeouts=0;double captureMs=0,submitMs=0;const auto start=std::chrono::steady_clock::now();
   FramePacer pacer(fps);auto nextReport=start+std::chrono::seconds(5);const auto captureEpoch=perfCounter();
-  while((streaming || frames<180) && std::chrono::steady_clock::now()-start<std::chrono::seconds(duration)) {
+  while(owner.alive() && (streaming || frames<180) && (continuous||std::chrono::steady_clock::now()-start<std::chrono::seconds(duration))) {
    if (streaming) {
     const auto pacing=perfCounter();
     if(legacy)std::this_thread::sleep_until(start+std::chrono::microseconds(uint64_t(frames)*1000000/fps));else pacer.wait();
