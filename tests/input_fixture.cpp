@@ -23,6 +23,7 @@ int main(int argc,char** argv){
         }
         return 0;
     }
+    const bool textEnabled=argc==6&&std::string(argv[5])=="--enable-text";
     uint64_t downs=0,ups=0,events=0;
     InputEngine engine({{0,0,2,2},{0,0,2,2},2,2},[&](const std::vector<INPUT>& values){for(const auto& item:values){++events;if(item.type==INPUT_KEYBOARD){if(item.ki.dwFlags&KEYEVENTF_KEYUP)++ups;else ++downs;}else {if(item.mi.dwFlags&(MOUSEEVENTF_LEFTDOWN|MOUSEEVENTF_RIGHTDOWN|MOUSEEVENTF_MIDDLEDOWN))++downs;if(item.mi.dwFlags&(MOUSEEVENTF_LEFTUP|MOUSEEVENTF_RIGHTUP|MOUSEEVENTF_MIDDLEUP))++ups;}}return UINT(values.size());});
     std::cout<<"{\"ready\":true,\"width\":2,\"height\":2}\n"<<std::flush;
@@ -34,7 +35,7 @@ int main(int argc,char** argv){
             DWORD available=0;if(!PeekNamedPipe(input,nullptr,0,nullptr,&available,nullptr))break;
             if(!available){Sleep(5);continue;}
             DWORD count=0;if(!ReadFile(input,bytes.data()+used,std::min<DWORD>(24-used,available),&count,nullptr)||!count)break;
-            used+=count;if(used==24){const auto event=parseInput(bytes);engine.apply(event,GetTickCount64());if(event.kind==5)std::cerr<<"fixture_control_active\n";used=0;}
+            used+=count;if(used==24){const auto event=parseInput(bytes,textEnabled);engine.apply(event,GetTickCount64());if(event.kind==5)std::cerr<<"fixture_control_active\n";used=0;}
         }
     }catch(const std::exception&){result=2;}
     engine.release();

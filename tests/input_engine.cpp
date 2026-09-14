@@ -39,5 +39,28 @@ int main(){try{
     expect(parseInput(packet).kind==5,"Control record parses");
     packet[6]=1;rejects([&]{parseInput(packet);});packet[6]=0;packet[4]=4;packet[15]=0x46;rejects([&]{parseInput(packet);});
     expect(hidScanCode(0x44)==0x57&&hidScanCode(0x58)==0x11c&&hidScanCode(0x65)==0x15d&&!hidScanCode(0x46)&&!hidScanCode(0x48),"HID allowlist and extended keypad mapping");
-    std::cout<<"PASS: gate, geometry, click ordering, HID modifiers/repeat, bounded ownership, failure release, lease, malformed input\n";return 0;
+    auto textPacket=[&](int32_t scalar){packet.fill(0);std::memcpy(packet.data(),"SPI1",4);packet[4]=8;packet[11]=1;for(int i=0;i<4;++i)packet[12+i]=uint8_t(uint32_t(scalar)>>(24-8*i));};
+    for(int32_t scalar:{0x20,0x7e,0xa0,0xd7ff,0xe000,0xffff,0x10000,0x1f642,0x10ffff}){textPacket(scalar);expect(parseInput(packet,true).a==scalar,"Valid scalar");rejects([&]{parseInput(packet);});}
+    for(int32_t scalar:{-1,0,0x1f,0x7f,0x9f,0xd800,0xdfff,0x110000}){textPacket(scalar);rejects([&]{parseInput(packet,true);});}
+    textPacket(0x41);packet[5]=1;rejects([&]{parseInput(packet,true);});packet[5]=0;packet[19]=1;rejects([&]{parseInput(packet,true);});
+    for(int32_t scalar:{0x41,0xe9,0x4e2d,0x1f642,0x10ffff}){
+        std::vector<std::vector<INPUT>> batches;
+        InputEngine textEngine({{0,0,2,2},{0,0,2,2},2,2},[&](const auto& v){batches.push_back(v);return UINT(v.size());});
+        textEngine.apply({5,0,1,0,0,0},0);textEngine.apply({8,0,2,scalar,0,0},1);
+        expect(batches.size()==1&&batches[0].size()==(scalar>0xffff?4u:2u),"One bounded batch per scalar");
+        const auto& v=batches[0];for(size_t i=0;i<v.size();i+=2)expect(v[i].type==INPUT_KEYBOARD&&v[i].ki.wVk==0&&v[i].ki.dwFlags==KEYEVENTF_UNICODE&&v[i+1].ki.dwFlags==(KEYEVENTF_UNICODE|KEYEVENTF_KEYUP)&&v[i].ki.wScan==v[i+1].ki.wScan,"Unicode down/up pair");
+        if(scalar>0xffff)expect(v[0].ki.wScan==0xd800+((scalar-0x10000)>>10)&&v[2].ki.wScan==0xdc00+((scalar-0x10000)&0x3ff),"Surrogate pair order");
+        else expect(v[0].ki.wScan==scalar,"BMP unit");
+        expect(textEngine.release()&&batches.size()==1,"Successful text retains no held units");
+    }
+    for(int32_t scalar:{0x41,0x1f642})for(UINT partial=0;partial<(scalar>0xffff?4u:2u);++partial){
+        std::vector<INPUT> lastBatch;bool recovered=false;
+        InputEngine textEngine({{0,0,2,2},{0,0,2,2},2,2},[&](const auto& v){lastBatch=v;return recovered?UINT(v.size()):std::min(partial,UINT(v.size()-1));});
+        textEngine.apply({5,0,1,0,0,0},0);rejects([&]{textEngine.apply({8,0,2,scalar,0,0},1);});
+        rejects([&]{textEngine.apply({8,0,3,0x42,0,0},2);});
+        expect(!textEngine.release(),"Failed Unicode release keeps ownership");recovered=true;
+        expect(textEngine.release()&&lastBatch.size()==(scalar>0xffff?2u:1u),"Retry releases every possibly held UTF16 unit");
+        for(const auto& v:lastBatch)expect(v.ki.dwFlags==(KEYEVENTF_UNICODE|KEYEVENTF_KEYUP),"Cleanup never repeats Unicode down");
+    }
+    std::cout<<"PASS: input engine and Unicode scalar, UTF16 batch, negotiation, partial failure release checks\n";return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}

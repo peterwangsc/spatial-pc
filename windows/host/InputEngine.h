@@ -11,9 +11,15 @@ class InputEngine {
     std::function<UINT(const std::vector<INPUT>&)> inject;
     std::array<bool,256> keys{};
     std::array<bool,4> buttons{};
+    std::array<WORD,2> unicodeOwned{};
+    size_t unicodeCount=0;
     uint32_t sequence=0;
     uint64_t last=0;
     bool controlling=false;
+    INPUT unicodeKey(WORD unit,bool down) const {
+        INPUT value{};value.type=INPUT_KEYBOARD;value.ki.wScan=unit;
+        value.ki.dwFlags=KEYEVENTF_UNICODE|(down?0:KEYEVENTF_KEYUP);return value;
+    }
     INPUT key(int usage,bool down) const {
         const auto scan=hidScanCode(usage);INPUT value{};value.type=INPUT_KEYBOARD;
         value.ki.wScan=WORD(scan&255);value.ki.dwFlags=KEYEVENTF_SCANCODE|(scan&0x100?KEYEVENTF_EXTENDEDKEY:0)|(down?0:KEYEVENTF_KEYUP);
@@ -41,8 +47,9 @@ public:
         controlling=false;std::vector<INPUT> releases;
         for(size_t i=0;i<keys.size();++i)if(keys[i])releases.push_back(key(int(i),false));
         for(int i=1;i<=3;++i)if(buttons[size_t(i)])releases.push_back(button(i,false));
+        for(size_t i=0;i<unicodeCount;++i)releases.push_back(unicodeKey(unicodeOwned[i],false));
         if(!releases.empty()&&inject(releases)!=releases.size())return false;
-        keys.fill(false);buttons.fill(false);return true;
+        keys.fill(false);buttons.fill(false);unicodeOwned.fill(0);unicodeCount=0;return true;
     }
     bool expired(uint64_t now) const {return controlling&&now-last>=2000;}
     void apply(const InputEvent& e,uint64_t now) {
@@ -54,15 +61,22 @@ public:
         if(e.kind==6){if(!release())throw std::runtime_error("Input release failed");return;}
         if(e.kind==7)return;
         if(!controlling)throw std::runtime_error("Input control inactive");
+        if(unicodeCount)throw std::runtime_error("Pending text release");
         auto desiredKeys=keys;auto desiredButtons=buttons;
         std::vector<INPUT> values;
         if(e.kind==1)values.push_back(move(e.a,e.b));
         else if(e.kind==2){values.push_back(move(e.a,e.b));const bool down=(e.flags&1)!=0;if(buttons[size_t(e.c)]!=down){desiredButtons[size_t(e.c)]=down;if(down)buttons[size_t(e.c)]=true;values.push_back(button(e.c,down));}}
         else if(e.kind==3){for(int axis=0;axis<2;++axis){const int amount=axis?e.b:e.a;if(amount){INPUT value{};value.type=INPUT_MOUSE;value.mi.dwFlags=axis?MOUSEEVENTF_HWHEEL:MOUSEEVENTF_WHEEL;value.mi.mouseData=DWORD(amount);values.push_back(value);}}}
         else if(e.kind==4){const bool down=(e.flags&1)!=0,repeat=(e.flags&2)!=0;if(repeat&&!keys[size_t(e.a)])throw std::runtime_error("Repeat without held key");if(down&&!keys[size_t(e.a)]&&e.a<0xe0){size_t held=0;for(size_t i=0;i<0xe0;++i)held+=keys[i]?1:0;if(held>=32)throw std::runtime_error("Held key bound exceeded");}if(keys[size_t(e.a)]!=down||repeat){desiredKeys[size_t(e.a)]=down;if(down)keys[size_t(e.a)]=true;values.push_back(key(e.a,down));}}
+        else if(e.kind==8){
+            if(e.flags||e.b||e.c||!validTextScalar(e.a))throw std::runtime_error("Invalid text input");
+            if(e.a<=0xffff){unicodeOwned[0]=WORD(e.a);unicodeCount=1;}
+            else {const auto scalar=uint32_t(e.a)-0x10000;unicodeOwned[0]=WORD(0xd800+(scalar>>10));unicodeOwned[1]=WORD(0xdc00+(scalar&0x3ff));unicodeCount=2;}
+            for(size_t i=0;i<unicodeCount;++i){values.push_back(unicodeKey(unicodeOwned[i],true));values.push_back(unicodeKey(unicodeOwned[i],false));}
+        }
         if(!values.empty()&&inject(values)!=values.size())throw std::runtime_error("Input injection failed");
         // Keep releases owned until Windows accepts them. Failed/partial downs
         // are conservatively owned too, so teardown retries every possible hold.
-        keys=desiredKeys;buttons=desiredButtons;
+        keys=desiredKeys;buttons=desiredButtons;unicodeOwned.fill(0);unicodeCount=0;
     }
 };

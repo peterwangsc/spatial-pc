@@ -7,7 +7,7 @@ import socket
 import struct
 import subprocess
 import time
-from input_protocol import CAPABILITY, EventQueue, Gate, decode
+from input_protocol import CAPABILITY, EventQueue, Gate, decode, text_negotiated
 from lab_server import MAX_MESSAGE, TransportStats, context_for
 
 
@@ -71,6 +71,7 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
             raise ValueError('No common codec')
         offer = request.get('input')
         enabled = isinstance(offer, dict) and type(offer.get('version')) is int and offer['version'] == 1
+        text_enabled = enabled and text_negotiated(offer)
         with (directory.parent/'encoder.log').open('w') as encoder_log, (directory.parent/'input-status.log').open('w') as input_log:
             capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', stdout=asyncio.subprocess.PIPE,
                                                           stderr=encoder_log, creationflags=flags, limit=65536)
@@ -83,13 +84,15 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
                 raise ValueError('Hardware encoder unavailable')
             if enabled:
                 bridge = await asyncio.create_subprocess_exec(str(bridge_path), '--width', str(capabilities['width']),
-                    '--height', str(capabilities['height']), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    '--height', str(capabilities['height']), *(['--enable-text'] if text_enabled else []), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=input_log, creationflags=flags, limit=4096)
                 ready = json.loads(await asyncio.wait_for(bridge.stdout.readline(), 3))
                 if ready != dict(ready=True, width=capabilities['width'], height=capabilities['height']):
                     raise ValueError('Native input bridge unavailable')
                 bridge.stdin.transport.set_write_buffer_limits(high=24*8, low=24*2)
-                capabilities['input'] = CAPABILITY
+                capabilities['input'] = dict(CAPABILITY)
+                if text_enabled:
+                    capabilities['input']['textVersion'] = 1
             payload = json.dumps(capabilities, separators=(',', ':')).encode()
             if len(payload)>4096:
                 raise ValueError('Capability response exceeds bound')
@@ -127,7 +130,7 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
 
                 async def receive():
                     while True:
-                        event = decode(await asyncio.wait_for(reader.readexactly(24), 2 if gate.active else 600))
+                        event = decode(await asyncio.wait_for(reader.readexactly(24), 2 if gate.active else 600), text_enabled=text_enabled)
                         gate.accept(event)
                         queue.put(event)
 

@@ -33,7 +33,8 @@ bool sameDisplay(const InputGeometry& expected) {
 int wmain(int argc,wchar_t** argv) {
     std::unique_ptr<InputEngine> engine;
     try {
-        if(argc!=5||std::wstring(argv[1])!=L"--width"||std::wstring(argv[3])!=L"--height")throw std::runtime_error("Input bridge arguments invalid");
+        const bool textEnabled=argc==6&&std::wstring(argv[5])==L"--enable-text";
+        if((argc!=5&&!textEnabled)||std::wstring(argv[1])!=L"--width"||std::wstring(argv[3])!=L"--height")throw std::runtime_error("Input bridge arguments invalid");
         const int width=std::stoi(argv[2]),height=std::stoi(argv[4]);
         if(width<2||height<2||width>8192||height>8192)throw std::runtime_error("Input display bounds invalid");
         if(!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))throw std::runtime_error("Input DPI context unavailable");
@@ -62,7 +63,7 @@ int wmain(int argc,wchar_t** argv) {
             used+=received;if(used<24)continue;used=0;
             tokens=std::min(120.0,tokens+double(now-refill)*.240);refill=now;
             if(tokens<1)throw std::runtime_error("Input rate exceeded");--tokens;
-            const auto event=parseInput(record);
+            const auto event=parseInput(record,textEnabled);
             if(event.kind==5) {
                 if(!normalDesktop())throw std::runtime_error("Input desktop unavailable");
                 // Do not adopt keys/buttons currently held by a local user.
