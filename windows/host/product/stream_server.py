@@ -1,6 +1,8 @@
 import asyncio
+import datetime as dt
 import hashlib
 import time
+from cryptography import x509
 from input_server import run_session
 from .process_guard import CaptureOwner
 from .tls_listener import listen
@@ -29,10 +31,14 @@ class StreamServer:
             started=True
             self.notify(dict(event='connected',name=device['name'],width=caps['width'],height=caps['height']))
         try:
+            peer=x509.load_der_x509_certificate(tls.getpeercert(binary_form=True))
+            expires=min(peer.not_valid_after_utc,self.identity.server.not_valid_after_utc)
+            remaining=max(0,(expires-dt.datetime.now(dt.timezone.utc)).total_seconds())
+            if remaining<=0:raise ValueError('Pairing certificate expired')
             await run_session(reader,writer,{'clientSHA256':fingerprint},self.capture,self.bridge,
-                self.identity.directory/'session',time.monotonic()+600,report=self.report,
+                self.identity.directory/'session',time.monotonic()+remaining,report=self.report,
                 ready=ready,
-                capture_owner=owner.assign)
+                capture_owner=owner.assign,continuous=True)
         except (OSError,ValueError,EOFError,TimeoutError,asyncio.IncompleteReadError):
             if not started:failure='The desktop could not start. Check that a display is active, update your GPU driver, and use the latest Spatial PC on both devices.'
         finally:

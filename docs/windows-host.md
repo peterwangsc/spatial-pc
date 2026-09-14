@@ -51,11 +51,20 @@ Changing away from the selected Private network disables access. Revoking the
 connected device immediately ends its session, releases held input and rejects
 its next connection before desktop capture starts.
 
-Sessions retain the tested ten-minute maximum and two-second input lease. The
-client reconnects using its saved identity; this may cause a brief interruption at
-the session limit. Physical Space and Tab require visionOS Full Keyboard Access
+Production sessions remain connected until disconnect, disable, revocation,
+certificate expiry or a watchdog failure. The lab entry point retains its
+ten-minute session maximum. Both retain the two-second input lease; an incomplete
+input record also expires after two seconds. Idle viewing does not claim control
+and does not force periodic reconnection. Native diagnostics rotate within
+256 KiB per child. Physical Space and Tab require visionOS Full Keyboard Access
 to be off. Audio, clipboard, additional virtual displays and internet relay are
 outside this MVP.
+
+Production capture waits for a local readiness byte sent only after assignment
+to the backend's kill-on-close Windows Job. The owner pipe also stops idle
+capture on EOF, including a parent failure before Job assignment. Input uses its
+separate EOF cleanup so it can release owned keys and buttons. Native continuous
+lifetime is explicit; default lab command lines keep their original time limits.
 
 Update and uninstall ask only this user's Spatial PC UI to quit, then wait for
 bounded cleanup. Uninstall removes this installation's firewall rules (with

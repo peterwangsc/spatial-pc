@@ -1,7 +1,8 @@
-"""Opt-in full-duplex lab transport. Exactly one event-loop thread owns TLS."""
+"""Opt-in full-duplex transport. Exactly one event-loop thread owns TLS."""
 import asyncio
 import hashlib
 import json
+import math
 import os
 import socket
 import struct
@@ -22,12 +23,12 @@ async def hello(reader):
     return value
 
 
-async def close_child(child, graceful=False):
+async def close_child(child, graceful=False, drain_stderr=True):
     if child is None:
         return
-    if graceful and child.stdin:
+    if child.stdin:
         child.stdin.close()  # Native EOF handler releases held state independently.
-    elif child.returncode is None:
+    if not graceful and child.returncode is None:
         child.terminate()
 
     async def drain(reader):
@@ -38,7 +39,7 @@ async def close_child(child, graceful=False):
     async def finished():
         # Process.wait can wait on pipe closure even after returncode is set.
         # Drain concurrently so canceled video reads cannot keep teardown stuck.
-        await asyncio.gather(child.wait(), drain(child.stdout), drain(child.stderr))
+        await asyncio.gather(child.wait(), drain(child.stdout), drain(child.stderr if drain_stderr else None))
 
     try:
         await asyncio.wait_for(finished(), 3)
@@ -53,14 +54,45 @@ async def close_child(child, graceful=False):
             raise RuntimeError('Child cleanup deadline exceeded') from error
 
 
-async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline, *, report=print, ready=None, capture_owner=None):
+def session_timeout(deadline, continuous=False):
+    if not math.isfinite(deadline):raise ValueError('Finite authorization deadline required')
+    remaining=max(0,deadline-time.monotonic())
+    return remaining if continuous else min(600,remaining)
+
+
+async def read_input(reader, active, text_enabled):
+    # Viewing without input may stay idle. A partial record may not hold a
+    # session open; the separate lease also expires active control in two seconds.
+    first=await asyncio.wait_for(reader.readexactly(1),2 if active else None)
+    rest=await asyncio.wait_for(reader.readexactly(23),2)
+    return decode(first+rest,text_enabled=text_enabled)
+
+
+async def bounded_metadata(reader, destination):
+    # Native stderr contains diagnostics only. Retain at most 256 KiB per child
+    # even across an all-day session; a slow peer never grows an unbounded log.
+    while chunk:=await reader.read(4096):
+        if destination.tell()+len(chunk)>256*1024:
+            destination.seek(0);destination.truncate()
+        destination.write(chunk);destination.flush()
+
+
+async def log_metadata(reader,path):
+    with path.open('wb') as destination:
+        await bounded_metadata(reader,destination)
+
+
+async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline, *, report=print, ready=None, capture_owner=None, continuous=False):
     capture = bridge = None
     gate = None
     completed = []
     tasks = []
+    metadata_tasks=[];capture_log=bridge_log=None
     stats = TransportStats()
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
+        session_timeout(deadline,continuous)
+        if continuous and capture_owner is None:raise ValueError('Continuous capture requires process ownership')
         tls = writer.get_extra_info('ssl_object')
         certificate = tls.getpeercert(binary_form=True)
         if hashlib.sha256(certificate).hexdigest() != policy['clientSHA256'] or tls.selected_alpn_protocol() != 'spatialpc/1':
@@ -72,92 +104,100 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
         offer = request.get('input')
         enabled = isinstance(offer, dict) and type(offer.get('version')) is int and offer['version'] == 1
         text_enabled = enabled and text_negotiated(offer)
-        with (directory.parent/'encoder.log').open('w') as encoder_log, (directory.parent/'input-status.log').open('w') as input_log:
-            capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', stdout=asyncio.subprocess.PIPE,
-                                                          stderr=encoder_log, creationflags=flags, limit=65536)
-            if capture_owner:
-                capture_owner(capture.pid)
-            capabilities = await asyncio.wait_for(hello(capture.stdout), 5)
-            for field in ('width', 'height'):
-                bound = request.get('max'+field.title())
-                if type(bound) is not int or type(capabilities.get(field)) is not int or not 2 <= capabilities[field] <= bound:
-                    raise ValueError('Display exceeds client capability')
-            if capabilities.get('hardwareEncoder') is not True:
-                raise ValueError('Hardware encoder unavailable')
-            if enabled:
-                bridge = await asyncio.create_subprocess_exec(str(bridge_path), '--width', str(capabilities['width']),
-                    '--height', str(capabilities['height']), *(['--enable-text'] if text_enabled else []), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=input_log, creationflags=flags, limit=4096)
-                native_ready = json.loads(await asyncio.wait_for(bridge.stdout.readline(), 3))
-                if native_ready != dict(ready=True, width=capabilities['width'], height=capabilities['height']):
-                    raise ValueError('Native input bridge unavailable')
-                bridge.stdin.transport.set_write_buffer_limits(high=24*8, low=24*2)
-                capabilities['input'] = dict(CAPABILITY)
-                if text_enabled:
-                    capabilities['input']['textVersion'] = 1
-            payload = json.dumps(capabilities, separators=(',', ':')).encode()
-            if len(payload)>4096:
-                raise ValueError('Capability response exceeds bound')
-            writer.write(b'SPC1'+struct.pack('!I', len(payload))+payload)
-            await asyncio.wait_for(writer.drain(), 5)
-            report('Authenticated session; input='+('negotiated' if enabled else 'view-only'), flush=True)
-            if ready:
-                ready(capabilities)
+        lifetime_args=['--until-owner-exits'] if continuous else []
+        capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', *lifetime_args, stdout=asyncio.subprocess.PIPE,
+                                                      stdin=asyncio.subprocess.PIPE if continuous else None,
+                                                      stderr=asyncio.subprocess.PIPE, creationflags=flags, limit=65536)
+        capture_log=asyncio.create_task(log_metadata(capture.stderr,directory.parent/'encoder.log'),name='capture-diagnostics')
+        metadata_tasks.append(capture_log)
+        if capture_owner:
+            capture_owner(capture.pid)
+        if continuous:
+            capture.stdin.write(b'C') # Only after successful Job assignment.
+            await asyncio.wait_for(capture.stdin.drain(),.5)
+        capabilities = await asyncio.wait_for(hello(capture.stdout), 5)
+        for field in ('width', 'height'):
+            bound = request.get('max'+field.title())
+            if type(bound) is not int or type(capabilities.get(field)) is not int or not 2 <= capabilities[field] <= bound:
+                raise ValueError('Display exceeds client capability')
+        if capabilities.get('hardwareEncoder') is not True:
+            raise ValueError('Hardware encoder unavailable')
+        if enabled:
+            bridge = await asyncio.create_subprocess_exec(str(bridge_path), '--width', str(capabilities['width']),
+                '--height', str(capabilities['height']), *(['--enable-text'] if text_enabled else []), *lifetime_args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE, creationflags=flags, limit=4096)
+            bridge_log=asyncio.create_task(log_metadata(bridge.stderr,directory.parent/'input-status.log'),name='input-diagnostics')
+            metadata_tasks.append(bridge_log)
+            native_ready = json.loads(await asyncio.wait_for(bridge.stdout.readline(), 3))
+            if native_ready != dict(ready=True, width=capabilities['width'], height=capabilities['height']):
+                raise ValueError('Native input bridge unavailable')
+            bridge.stdin.transport.set_write_buffer_limits(high=24*8, low=24*2)
+            capabilities['input'] = dict(CAPABILITY)
+            if text_enabled:
+                capabilities['input']['textVersion'] = 1
+        payload = json.dumps(capabilities, separators=(',', ':')).encode()
+        if len(payload)>4096:
+            raise ValueError('Capability response exceeds bound')
+        writer.write(b'SPC1'+struct.pack('!I', len(payload))+payload)
+        await asyncio.wait_for(writer.drain(), 5)
+        report('Authenticated session; input='+('negotiated' if enabled else 'view-only'), flush=True)
+        if ready:
+            ready(capabilities)
 
-            async def video():
-                next_report = time.perf_counter()+5
+        async def video():
+            next_report = time.perf_counter()+5
+            while True:
+                before = time.perf_counter()
+                header = await capture.stdout.readexactly(16)
+                size, pts, _ = struct.unpack('!IQI', header)
+                if not 0 < size <= MAX_MESSAGE:
+                    raise ValueError('Invalid video size')
+                payload = await capture.stdout.readexactly(size)
+                sending = time.perf_counter()
+                writer.write(header)
+                writer.write(payload)
+                await asyncio.wait_for(writer.drain(), 5)
+                sent = time.perf_counter()
+                stats.frame(pts, size, (sending-before)*1000, (sent-sending)*1000)
+                if sent >= next_report:
+                    report('transport_summary='+json.dumps(stats.report()), flush=True)
+                    next_report = sent+5
+
+        async def watch_view_only():
+            # Reverse traffic is forbidden without successful negotiation.
+            if await reader.read(1):
+                raise ValueError('Unnegotiated input')
+
+        tasks.append(asyncio.create_task(video(), name='video'))
+        if enabled:
+            queue, gate = EventQueue(), Gate()
+
+            async def receive():
                 while True:
-                    before = time.perf_counter()
-                    header = await capture.stdout.readexactly(16)
-                    size, pts, _ = struct.unpack('!IQI', header)
-                    if not 0 < size <= MAX_MESSAGE:
-                        raise ValueError('Invalid video size')
-                    payload = await capture.stdout.readexactly(size)
-                    sending = time.perf_counter()
-                    writer.write(header)
-                    writer.write(payload)
-                    await asyncio.wait_for(writer.drain(), 5)
-                    sent = time.perf_counter()
-                    stats.frame(pts, size, (sending-before)*1000, (sent-sending)*1000)
-                    if sent >= next_report:
-                        report('transport_summary='+json.dumps(stats.report()), flush=True)
-                        next_report = sent+5
+                    event = await read_input(reader,gate.active,text_enabled)
+                    gate.accept(event)
+                    queue.put(event)
 
-            async def watch_view_only():
-                # Reverse traffic is forbidden without successful negotiation.
-                if await reader.read(1):
-                    raise ValueError('Unnegotiated input')
+            async def dispatch():
+                while True:
+                    event = await queue.get()
+                    bridge.stdin.write(event.wire())
+                    await asyncio.wait_for(bridge.stdin.drain(), .5)
 
-            tasks.append(asyncio.create_task(video(), name='video'))
-            if enabled:
-                queue, gate = EventQueue(), Gate()
+            async def lease():
+                while True:
+                    await asyncio.sleep(.05)
+                    if gate.expired():
+                        raise TimeoutError('Input lease expired')
 
-                async def receive():
-                    while True:
-                        event = decode(await asyncio.wait_for(reader.readexactly(24), 2 if gate.active else 600), text_enabled=text_enabled)
-                        gate.accept(event)
-                        queue.put(event)
-
-                async def dispatch():
-                    while True:
-                        event = await queue.get()
-                        bridge.stdin.write(event.wire())
-                        await asyncio.wait_for(bridge.stdin.drain(), .5)
-
-                async def lease():
-                    while True:
-                        await asyncio.sleep(.05)
-                        if gate.expired():
-                            raise TimeoutError('Input lease expired')
-
-                tasks.extend(asyncio.create_task(job(),name=job.__name__) for job in (receive, dispatch, lease))
-                tasks.append(asyncio.create_task(bridge.wait(),name='native-exit'))
-            else:
-                tasks.append(asyncio.create_task(watch_view_only()))
-            done, _ = await asyncio.wait(tasks, timeout=max(0, min(600, deadline-time.monotonic())), return_when=asyncio.FIRST_COMPLETED)
-            completed = sorted(task.get_name() for task in done)
-            for task in done:
-                task.result()
+            tasks.extend(asyncio.create_task(job(),name=job.__name__) for job in (receive, dispatch, lease))
+            tasks.append(asyncio.create_task(bridge.wait(),name='native-exit'))
+        else:
+            tasks.append(asyncio.create_task(watch_view_only()))
+        done, _ = await asyncio.wait(tasks+metadata_tasks, timeout=session_timeout(deadline,continuous), return_when=asyncio.FIRST_COMPLETED)
+        completed = sorted(task.get_name() for task in done)
+        for task in done:
+            task.result()
     finally:
         input_summary = dict(records=gate.accepted, leaseExpired=gate.expired(), completed=completed) if gate else None
         if bridge and bridge.stdin:
@@ -168,16 +208,20 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
         await asyncio.gather(*tasks, return_exceptions=True)
         cleanup_failed = False
         try:
-            await close_child(bridge, graceful=True)
+            await close_child(bridge, graceful=True,drain_stderr=bridge_log is None or bridge_log.done())
         except RuntimeError:
             cleanup_failed = True
         if input_summary is not None:
             input_summary['nativeExit'] = bridge.returncode
             report('input_summary='+json.dumps(input_summary), flush=True)
         try:
-            await close_child(capture)
+            await close_child(capture,drain_stderr=capture_log is None or capture_log.done())
         except RuntimeError:
             cleanup_failed = True
+        for task in metadata_tasks:
+            try:await asyncio.wait_for(asyncio.shield(task),1)
+            except (Exception,asyncio.CancelledError):task.cancel();cleanup_failed=True
+        await asyncio.gather(*metadata_tasks,return_exceptions=True)
         if stats.frames:
             report('transport_summary='+json.dumps(stats.report()), flush=True)
         if cleanup_failed:

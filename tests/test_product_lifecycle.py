@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from test_pairing_integration import free_port
 
-FIXTURE=Path(__file__).resolve().parents[1]/'.local'/'input_fixture.exe'
+FIXTURE=Path(os.environ.get('SPATIAL_PC_INPUT_FIXTURE',Path(__file__).resolve().parents[1]/'.local'/'input_fixture.exe'))
 
 
 @unittest.skipUnless(os.name=='nt' and FIXTURE.is_file(),'Build windows/host/test_input.cmd first on Windows')

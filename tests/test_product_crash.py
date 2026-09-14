@@ -10,7 +10,7 @@ import time
 import unittest
 
 HOST=Path(__file__).resolve().parents[1]/'windows'/'host'
-FIXTURE=HOST.parents[1]/'.local'/'input_fixture.exe'
+FIXTURE=Path(os.environ.get('SPATIAL_PC_INPUT_FIXTURE',HOST.parents[1]/'.local'/'input_fixture.exe'))
 
 
 @unittest.skipUnless(os.name=='nt' and FIXTURE.is_file(),'Windows native fixture required')
