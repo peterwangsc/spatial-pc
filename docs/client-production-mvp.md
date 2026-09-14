@@ -26,7 +26,7 @@ Physical testing of the prior input build established that letters and the float
 ## Validation so far
 
 - 25 Swift protocol/storage tests pass, including the exact Windows-generated transcript/HMAC/signature vector, strict JSON/framing limits, and existing video/input checks.
-- Release simulator builds, a signed visionOS Release archive, and an App Store IPA export succeeded with the app icon and privacy manifest. Version 1.0.0 build 14 was exported with the verified distribution team; it has not been uploaded or approved.
+- Release simulator builds, a signed visionOS Release archive, and an App Store IPA export succeeded with the app icon and privacy manifest. Version 1.0.0 build 16 was exported with the verified distribution team; it has not been uploaded or approved.
 - visionOS 26.5 simulator, Release build 11: manual enrollment reached local approval, installed the matching Keychain identity, saved the PC, and connected to an encrypted synthetic stream. More than 1,000 frames decoded in the first session.
 - Killing and restoring the loopback server caused a visible reconnect state and automatic recovery with the same stored identity.
 - Reinstalling/relaunching the app retained the paired PC; Connect again decoded more than 780 frames.
