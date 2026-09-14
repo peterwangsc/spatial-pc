@@ -5,10 +5,46 @@ installation, or automatic startup. Desktop frames stay in memory. A client must
 present the provisioned certificate before capture begins. Connections have a
 ten-minute limit and stall timeout; disconnect terminates the capture child.
 """
-import argparse, ctypes, hashlib, json, os, socket, ssl, struct, subprocess, tempfile, time
+import argparse, ctypes, hashlib, json, os, socket, ssl, struct, subprocess, tempfile, threading, time
 from pathlib import Path
 
 MAX_MESSAGE = 16 * 1024 * 1024  # allocation safety bound, not a resolution tier
+
+
+class TransportStats:
+    """Bounded metadata samples. Socket time includes TLS and peer backpressure."""
+    def __init__(self):
+        self.began = time.perf_counter()
+        self.cpu_began = time.process_time()
+        self.frames = self.bytes = 0
+        self.series = {}
+        self.first_pts = self.first_arrival = None
+
+    def add(self, name, value):
+        samples = self.series.setdefault(name, [])
+        if len(samples) < 36000:
+            samples.append(value)
+
+    def frame(self, timestamp, size, read_ms, send_ms):
+        now = time.perf_counter()
+        self.frames += 1
+        self.bytes += size
+        self.add('pipe_read_wait_ms', read_ms)
+        self.add('tls_send_ms', send_ms)
+        if self.first_pts is None:
+            self.first_pts, self.first_arrival = timestamp, now
+        # Relative drift only; clocks are not synchronized across processes/devices.
+        self.add('send_timeline_drift_ms', (now-self.first_arrival)*1000-(timestamp-self.first_pts)/10000)
+
+    def report(self):
+        metrics = {}
+        for name, values in self.series.items():
+            ordered = sorted(values)
+            metrics[name] = {'n': len(ordered), **{key: ordered[int(q*(len(ordered)-1))]
+                for key, q in (('p50', .5), ('p95', .95), ('p99', .99))}, 'max': max(ordered)}
+        elapsed = time.perf_counter()-self.began
+        return {'frames': self.frames, 'encodedBytes': self.bytes, 'elapsed_s': elapsed,
+                'cpu_core_percent': 100*(time.process_time()-self.cpu_began)/elapsed, 'metrics': metrics}
 
 def read_exact(stream, size):
     result = bytearray()
@@ -73,6 +109,8 @@ def serve(directory, executable, bind, lifetime):
             try: raw, address = listener.accept()
             except socket.timeout: continue
             child = None
+            stats = None
+            capture_deadline = None
             try:
                 raw.settimeout(5)
                 with context.wrap_socket(raw, server_side=True) as peer:
@@ -85,24 +123,40 @@ def serve(directory, executable, bind, lifetime):
                         raise ValueError('No common codec')
                     print('Authenticated session; TLS='+peer.version(), flush=True)
                     with open(directory.parent/'encoder.log', 'w') as log:
-                        child = subprocess.Popen([str(executable), '--stream'], stdout=subprocess.PIPE, stderr=log)
+                        child = subprocess.Popen([str(executable), '--stream'], stdout=subprocess.PIPE, stderr=log,
+                                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                        # A blocked pipe read must not defeat the session/lab deadline.
+                        capture_deadline = threading.Timer(max(0, min(600, deadline-time.monotonic())), child.terminate)
+                        capture_deadline.daemon = True
+                        capture_deadline.start()
                         encoded_header, capabilities = read_hello(child.stdout)
                         for key in ('width', 'height'):
                             limit = hello.get('max'+key.title())
                             if type(limit) is not int or capabilities[key] > limit: raise ValueError('Display exceeds client capability')
                         peer.sendall(encoded_header)
                         session_end = min(deadline, time.monotonic()+600)
-                        frames = total = 0
+                        stats = TransportStats()
+                        next_report = time.perf_counter()+5
                         while time.monotonic() < session_end:
+                            read_start = time.perf_counter()
                             header = read_exact(child.stdout, 16)
-                            size = struct.unpack('!I', header[:4])[0]
+                            size, timestamp, _ = struct.unpack('!IQI', header)
                             if not 0 < size <= MAX_MESSAGE: raise ValueError('Invalid encoded frame length')
-                            peer.sendall(header+read_exact(child.stdout, size))
-                            frames += 1; total += size
-                            if frames % 300 == 0: print(json.dumps(dict(frames=frames, encodedBytes=total)), flush=True)
+                            payload = read_exact(child.stdout, size)
+                            send_start = time.perf_counter()
+                            peer.sendall(header+payload)
+                            sent = time.perf_counter()
+                            stats.frame(timestamp, size, (send_start-read_start)*1000, (sent-send_start)*1000)
+                            if sent >= next_report:
+                                print('transport_summary='+json.dumps(stats.report()), flush=True)
+                                next_report = sent+5
             except (OSError, ValueError, EOFError, ssl.SSLError) as error:
                 print('Session ended: '+type(error).__name__, flush=True)
             finally:
+                if capture_deadline:
+                    capture_deadline.cancel()
+                if stats:
+                    print('transport_summary='+json.dumps(stats.report()), flush=True)
                 raw.close()
                 if child:
                     child.terminate()
