@@ -6,6 +6,7 @@ struct SpatialSurface: View {
     private var displayHeight: Float { model.workspace.width * Float(model.renderer.dimensions.y) / Float(model.renderer.dimensions.x) }
     var body: some View {
         RealityView { content, attachments in
+            if let environment = try? await FocusEnvironment.make() { content.add(environment) }
             await model.renderer.ensureStarted()
             if let material = model.renderer.material {
                 let plane = ModelEntity(mesh:.generatePlane(width:model.workspace.width,height:displayHeight),materials:[material])
@@ -36,7 +37,7 @@ struct SpatialSurface: View {
                 content.add(plane)
             }
         } update: { content, _ in
-            if let plane = content.entities.first as? ModelEntity, let material = model.renderer.material {
+            if let plane = model.spatialDisplay, let material = model.renderer.material {
                 plane.model?.materials = [material]
             }
         } attachments: {
@@ -48,27 +49,3 @@ struct SpatialSurface: View {
     }
 }
 
-struct SpatialDisplayControls: View {
-    @Bindable var model: AppModel
-    var body: some View {
-        VStack(alignment:.leading,spacing:8) {
-            if #available(visionOS 26.0, *) {
-                Text("Look at the display and pinch-drag to move it. Pinch with both hands and move them apart or together to resize.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            HStack {
-                Button("Smaller",systemImage:"minus.magnifyingglass") { model.scaleSpatialDisplay(1/1.15) }
-                Button("Larger",systemImage:"plus.magnifyingglass") { model.scaleSpatialDisplay(1.15) }
-                Button("Closer") { model.moveSpatialDisplay([0,0,0.15]) }
-                Button("Farther") { model.moveSpatialDisplay([0,0,-0.15]) }
-                Button("Reset Position",systemImage:"arrow.counterclockwise") { model.resetSpatialDisplay() }
-            }.controlSize(.small)
-            HStack {
-                Button("Left",systemImage:"arrow.left") { model.moveSpatialDisplay([-0.1,0,0]) }
-                Button("Right",systemImage:"arrow.right") { model.moveSpatialDisplay([0.1,0,0]) }
-                Button("Up",systemImage:"arrow.up") { model.moveSpatialDisplay([0,0.1,0]) }
-                Button("Down",systemImage:"arrow.down") { model.moveSpatialDisplay([0,-0.1,0]) }
-            }.controlSize(.small)
-        }
-    }
-}

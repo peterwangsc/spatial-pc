@@ -70,7 +70,7 @@ final class SyntheticRenderer: NSObject {
                 width: width, height: height, textureUsage: [.shaderRead,.shaderWrite]))
             self.texture = texture
             let resource = try await TextureResource(from: texture)
-            var material = UnlitMaterial()
+            var material = UnlitMaterial(applyPostProcessToneMap:false)
             material.color = .init(texture: .init(resource))
             self.material = material
             startTime = CACurrentMediaTime(); sampleStart = startTime
