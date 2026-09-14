@@ -55,6 +55,23 @@ Build 14 added two recovery fixes after this Windows phase. With synthetic loopb
 
 Build 16 replaces the Settings confirmation toolbar button with a standard Close action and Escape shortcut. In the simulator, the prior Done control did not receive pointer activation; the Close control dismisses correctly. The temporary action diagnostic used to distinguish hit testing from dismissal state was removed before this build. Physical confirmation remains part of the consumer-build regression.
 
+## Final production-session integration
+
+The later Windows package `ca1ea6a` and Release build 16 passed a fresh enrollment
+and 600 decoded frames in a 10.949-second bounded simulator check. This exercises
+the new capture owner-start handshake and production session path. Input/text
+capabilities were available, while every input callback counter remained zero
+and input ownership stayed inactive. The client used the same TLS-opaque relay and simulator
+decoder; this is not a physical input or latency measurement.
+
+The first attempt failed before TLS because Windows-generated rules blocked the
+test runtime. The PC corrected only that temporary test configuration, then
+restored those rules at cleanup. The successful session ended by automatic
+simulator termination, the saved PC was removed locally, and the Windows test identity
+was revoked after its operator stopped. Test listeners, relay and temporary
+allow rules are gone. See [the Windows validation record](windows-production-validation.md)
+for exact package hashes, the separate eleven-minute idle tests and cleanup limits.
+
 ## Release scope and remaining gates
 
 The demonstrated MVP has encrypted single-display streaming, pointer/keyboard input, a window beside other visionOS windows, and adjustable Focus immersion. Audio, clipboard transfer, WAN access, file transfer, multiple monitors and a headless virtual Windows monitor are outside this release scope. Capture still requires a logged-in interactive Windows session and a supported hardware H.264 encoder.

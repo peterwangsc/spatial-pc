@@ -46,7 +46,7 @@ The privacy manifest declares app-local preferences (`CA92.1`) and elapsed-time 
 
 - Physical consumer Windows package to Release client setup, discovery and input. Simulator enrollment, persisted mTLS streaming, reconnect and active revocation passed against the packaged Windows host; see the client validation report for the relay and input boundaries.
 - Physical production-build regression after consumer pairing; current physical success used the earlier development enrollment.
-- IPv6-only/local-accessory compatibility testing. Network.framework is address-family agnostic, but Windows assigned-address IPv6 listener and Bonjour AAAA support is under separate review. Do not assume NAT64 reaches a LAN host or mark this checked from ordinary IPv4 testing.
+- IPv6-only/local-accessory compatibility testing. Network.framework is address-family agnostic, and Windows assigned-address IPv6 listener and Bonjour AAAA checks have passed. Do not assume NAT64 reaches a LAN host or mark this checked from ordinary IPv4 testing.
 - Signed Windows installer with clean-machine lifecycle validation and a verified publisher; immutable HTTPS artifact metadata.
 - App Store Connect sign-in, creation of the app record for the already-owned bundle identifier, actual name reservation and final collision review.
 - Final archive/export, App Store validation/upload, TestFlight processing and beta regression, screenshots from the real final UI, then App Review.
