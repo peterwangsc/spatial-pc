@@ -118,7 +118,7 @@ async def run(directory, fixture, port):
                 deadline=time.monotonic()+4
                 path=directory/'input-status.log'
                 while time.monotonic()<deadline:
-                    lines=path.read_text().splitlines() if path.exists() else []
+                    lines=path.read_text().split('\n')[:-1] if path.exists() else []
                     results=[json.loads(line.split('=',1)[1]) for line in lines if line.startswith('fixture_input_summary=')]
                     if results:return results[-1]
                     await asyncio.sleep(.05)

@@ -14,11 +14,12 @@ int main(int argc,char** argv){
         unsigned char header[16]={'S','P','C','1'};u32(header+4,uint32_t(hello.size()));
         fwrite(header,1,8,stdout);fwrite(hello.data(),1,hello.size(),stdout);fflush(stdout);
         std::cerr<<"fixture_capture_started\n";
+        const bool flood=GetEnvironmentVariableA("SPATIAL_INPUT_FIXTURE_FLOOD",nullptr,0)>0;
+        std::vector<unsigned char> payload(flood?1048576:8,0);payload[3]=1;payload[4]=0x65;
         for(uint64_t frame=0;frame<3600;++frame){
-            u32(header,8);for(int i=0;i<8;++i)header[4+i]=BYTE((frame*166667)>>(56-8*i));u32(header+12,0);
-            const unsigned char dummy[8]={0,0,0,1,0x65,0,0,0};
-            if(fwrite(header,1,16,stdout)!=16||fwrite(dummy,1,8,stdout)!=8||fflush(stdout))break;
-            Sleep(16);
+            u32(header,uint32_t(payload.size()));for(int i=0;i<8;++i)header[4+i]=BYTE((frame*166667)>>(56-8*i));u32(header+12,0);
+            if(fwrite(header,1,16,stdout)!=16||fwrite(payload.data(),1,payload.size(),stdout)!=payload.size()||fflush(stdout))break;
+            if(!flood)Sleep(16);
         }
         return 0;
     }

@@ -29,13 +29,28 @@ async def close_child(child, graceful=False):
         child.stdin.close()  # Native EOF handler releases held state independently.
     elif child.returncode is None:
         child.terminate()
+
+    async def drain(reader):
+        if reader:
+            while await reader.read(65536):
+                pass  # Discard pixels/metadata; unblock paused pipe transports.
+
+    async def finished():
+        # Process.wait can wait on pipe closure even after returncode is set.
+        # Drain concurrently so canceled video reads cannot keep teardown stuck.
+        await asyncio.gather(child.wait(), drain(child.stdout), drain(child.stderr))
+
     try:
-        await asyncio.wait_for(child.wait(), 3)
+        await asyncio.wait_for(finished(), 3)
     except asyncio.TimeoutError:
-        # Only a wedged helper reaches this path; its independent two-second
-        # watchdog normally releases before the graceful deadline.
-        child.kill()
-        await child.wait()
+        if child.returncode is None:
+            child.kill()
+        try:
+            await asyncio.wait_for(finished(), 1)
+        except asyncio.TimeoutError as error:
+            # Stop this host rather than accept a new session with orphaned pipe
+            # state. There is no unbounded second wait after kill.
+            raise RuntimeError('Child cleanup deadline exceeded') from error
 
 
 async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline):
@@ -138,16 +153,28 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
                 task.result()
     finally:
         input_summary = dict(records=gate.accepted, leaseExpired=gate.expired(), completed=completed) if gate else None
+        if bridge and bridge.stdin:
+            bridge.stdin.close()  # Signal native release before any awaited cleanup.
+        writer.transport.abort()  # Session EOF must not wait on a full capture pipe.
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await close_child(bridge, graceful=True)  # Release takes priority over video cleanup.
+        cleanup_failed = False
+        try:
+            await close_child(bridge, graceful=True)
+        except RuntimeError:
+            cleanup_failed = True
         if input_summary is not None:
             input_summary['nativeExit'] = bridge.returncode
             print('input_summary='+json.dumps(input_summary), flush=True)
-        await close_child(capture)
+        try:
+            await close_child(capture)
+        except RuntimeError:
+            cleanup_failed = True
         if stats.frames:
             print('transport_summary='+json.dumps(stats.report()), flush=True)
+        if cleanup_failed:
+            raise RuntimeError('Session child cleanup did not finish')
 
 
 async def serve_async(directory, capture_path, bridge_path, bind, lifetime):
