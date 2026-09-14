@@ -42,8 +42,12 @@ final class LabStreamClient {
             let frames: Int
             let decodeMS: Double
             let hardwareDecoder: Bool
+            let inputAvailable: Bool
+            let controlling: Bool
+            let queuedInputEvents: Int
         }
-        let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder)
+        let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder,
+                                inputAvailable:inputAvailable,controlling:controlling,queuedInputEvents:inputOutbox.events.count)
         diagnosticsQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) {
                 try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
@@ -119,6 +123,8 @@ final class LabStreamClient {
         guard inputAvailable,hasFrames,connection != nil else { return false }
         if controlling { return true }
         controlling = true; enqueueInput(.start)
+        guard controlling else { return false }
+        saveDiagnostics()
         let sessionID = generation
         inputHeartbeat = Task { [weak self] in
             while !Task.isCancelled {
@@ -135,7 +141,7 @@ final class LabStreamClient {
     func stopControl() {
         guard controlling else { return }
         controlling = false; inputHeartbeat?.cancel(); inputHeartbeat = nil
-        enqueueInput(.stop)
+        enqueueInput(.stop); saveDiagnostics()
     }
     func sendInput(_ event:InputWire.Event) {
         guard controlling,inputAvailable else { return }
