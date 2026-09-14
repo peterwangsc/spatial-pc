@@ -75,7 +75,7 @@ final class LabStreamClient {
     }
     func disconnect() {
         controlling = false; inputAvailable = false; textAvailable = false
-        keyPressEvents = 0; committedTextCallbacks = 0; keyboardFirstResponder = false
+        keyPressEvents = 0; committedTextCallbacks = 0; keyboardFirstResponder = false; keyboardPresentationRequested = false
         inputHeartbeat?.cancel(); inputHeartbeat = nil
         inputWriter?.cancel(); inputWriter = nil; inputWriteStarted = nil
         inputOutbox = InputWire.Outbox()

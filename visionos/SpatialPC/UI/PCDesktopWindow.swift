@@ -127,6 +127,15 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     }
     override var inputView: UIView? { showsSystemKeyboard ? nil : suppressedKeyboard }
     func updateKeyboardRequest(_ request:Int) {
+        guard input?.available == true else {
+            keyboardRequest = request
+            if showsSystemKeyboard || isFirstResponder {
+                showsSystemKeyboard = false
+                input?.keyboardPresentationChanged(false)
+                _ = resignFirstResponder()
+            }
+            return
+        }
         guard keyboardRequest != request else { return }
         keyboardRequest = request
         guard input?.textAvailable == true else { return }
