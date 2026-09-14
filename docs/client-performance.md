@@ -9,8 +9,9 @@ Network exact reads run outside the main actor and request the remaining bytes o
 ## September 13 development checks
 
 - Four Swift protocol tests and four Python protocol tests passed.
-- Optimized visionOS simulator and signed physical-device Lab builds passed.
+- Optimized visionOS simulator and signed physical-device Lab builds passed; the signed Release archive also passed.
 - A local-only TLS 1.3 fixture delivered 1080p H.264 generated from `ffmpeg testsrc2` at 60 fps. Each frame header was deliberately split across three sends. Window → Focus → window kept the changing image visible. Wrong server pin rejected with zero frames; corrected pairing reconnected and decoded at least 120 frames.
+- Additional authenticated fixture faults closed promptly with zero frames: truncated frame header in 1.29 seconds and oversized frame length in 0.78 seconds. These test the new exact-read behavior at connection termination and the existing allocation bound.
 - Simulator telemetry identifies direct-window versus RealityKit-copy presentation. Window submission was approximately 30 fps on this simulator, while Focus texture copies were approximately 60 fps. These are distinct counters and are not measurements of headset display rate or scanout.
 - On an M4 Pro, 120 synthetic 1080p frames decoded with VideoToolbox hardware acceleration. A single paired run measured Debug decode p50/p95/p99 2.524/2.973/3.802 ms and optimized 1.955/2.623/2.686 ms. This is a local synthetic check, not a statistically controlled AVP latency benchmark.
 - Borrowing Annex-B input storage eliminates one full input copy. A 1 MB synthetic parse-plus-AVCC microbenchmark (1,000 iterations after 100 warmups, optimized compiler) measured p50 0.508 → 0.480 ms. Small observed timing differences need repetition; the removed allocation is the stronger claim.
