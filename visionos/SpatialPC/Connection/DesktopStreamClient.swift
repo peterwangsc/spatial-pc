@@ -316,7 +316,11 @@ final class DesktopStreamClient {
             }
         } catch {
             guard generation == sessionID else { return }
-            recover("The desktop connection ended. Check your PC, then reconnect.",retry:true)
+            if error is StreamWire.Invalid || error is DecodingError {
+                recover("This PC sent an incompatible desktop stream. Update Spatial PC on both devices.",retry:false)
+            } else {
+                recover("The desktop connection ended. Check your PC, then reconnect.",retry:true)
+            }
         }
     }
 }

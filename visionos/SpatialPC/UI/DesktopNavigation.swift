@@ -1,5 +1,17 @@
 import SwiftUI
 
+private struct DesktopControlVisibility:ViewModifier {
+    let alwaysVisible:Bool
+    @ViewBuilder func body(content:Content) -> some View {
+        if alwaysVisible { content }
+        else {
+            content.hoverEffect { effect,isActive,_ in
+                effect.opacity(isActive ? 1 : 0)
+            }
+        }
+    }
+}
+
 struct DesktopKeyboardButton: View {
     @Bindable var model: AppModel
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
@@ -9,9 +21,7 @@ struct DesktopKeyboardButton: View {
                 .font(.title3.weight(.semibold))
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
-                .hoverEffect { effect,isActive,_ in
-                    effect.opacity(isActive || voiceOverEnabled || !model.stream.hasFrames ? 1 : 0)
-                }
+                .modifier(DesktopControlVisibility(alwaysVisible:voiceOverEnabled || !model.stream.hasFrames))
         }
         .buttonStyle(.plain)
         // Desktop typing belongs to the remote responder, including Space.
@@ -42,9 +52,7 @@ struct DesktopNavigationButton: View {
                 .font(.title3.weight(.semibold))
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
-                .hoverEffect { effect, isActive, _ in
-                    effect.opacity(isActive || voiceOverEnabled || !model.stream.hasFrames ? 1 : 0)
-                }
+                .modifier(DesktopControlVisibility(alwaysVisible:voiceOverEnabled || !model.stream.hasFrames))
         }
         .buttonStyle(.plain)
         // Desktop typing belongs to the remote responder, including Space.
