@@ -1,6 +1,6 @@
 # App Store preparation
 
-The consumer release is being prepared as version 1.0.0. This document is submission material and a readiness record; it does not mean the app is uploaded, approved, or available. Build 11's intermediate version 0.1.0 signed archive and App Store export succeeded. The final 1.0.0 artifact must be built and verified after integration.
+The consumer release is being prepared as version 1.0.0. This document is submission material and a readiness record; it does not mean the app is uploaded, approved, or available. Version 1.0.0 build 12's signed archive and App Store export succeeded. Its distribution signature, bundle identifier, non-debug provisioning entitlement, app icon and privacy manifest were inspected. This integration candidate has not been uploaded; finalize the artifact after the remaining checks.
 
 ## Draft listing
 
