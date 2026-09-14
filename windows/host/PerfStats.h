@@ -6,6 +6,7 @@
 #include <mutex>
 #include <sstream>
 #include <vector>
+#include "FrameTrace.h"
 
 inline int64_t perfCounter() { LARGE_INTEGER value; QueryPerformanceCounter(&value); return value.QuadPart; }
 inline int64_t perfFrequency() { static const auto f = [] { LARGE_INTEGER v; QueryPerformanceFrequency(&v); return v.QuadPart; }(); return f; }
@@ -38,12 +39,17 @@ class PerfStats {
         if (s.values.size() < 36000) s.values.push_back(value);
     }
 public:
+    FrameTrace trace;
+    explicit PerfStats(bool traceEvents=false):trace(traceEvents,began,perfFrequency()) {}
     void add(const std::string& name, double value) { std::lock_guard lock(mutex); addLocked(name, value); }
     void timeout() { std::lock_guard lock(mutex); ++timeouts; }
     void input(int64_t timestamp, int64_t acquired, UINT frames) {
         std::lock_guard lock(mutex);
         if (pending.size() == 1024) { pending.erase(pending.begin()); ++unmatched; }
-        pending[timestamp] = { acquired, perfCounter() }; ++inputs; accumulated += frames > 1 ? frames - 1 : 0;
+        const auto submitted = perfCounter();
+        pending[timestamp] = { acquired, submitted }; ++inputs; accumulated += frames > 1 ? frames - 1 : 0;
+        trace.record(FrameTrace::Kind::Acquired, acquired, timestamp);
+        trace.record(FrameTrace::Kind::WriteEnter, submitted, timestamp);
         peak = std::max(peak, pending.size());
     }
     bool capacity(size_t limit) {
@@ -52,6 +58,7 @@ public:
     }
     void output(int64_t timestamp, DWORD length) {
         const auto now = perfCounter(); std::lock_guard lock(mutex);
+        trace.record(FrameTrace::Kind::Encoded, now, timestamp);
         const auto found = pending.find(timestamp);
         if (found != pending.end()) {
             addLocked("acquire_to_encoded_ms", perfMs(now - found->second.acquired));
@@ -60,7 +67,7 @@ public:
         if (lastOutput) addLocked("encoded_interval_ms", perfMs(now - lastOutput));
         lastOutput = now; ++outputs; bytes += length;
     }
-    void delivered(int64_t timestamp) { std::lock_guard lock(mutex); pending.erase(timestamp); changed.notify_all(); }
+    void delivered(int64_t timestamp) { std::lock_guard lock(mutex); if(trace.active())trace.record(FrameTrace::Kind::Delivered,perfCounter(),timestamp);pending.erase(timestamp); changed.notify_all(); }
     void report() {
         std::lock_guard lock(mutex); std::ostringstream out; out << std::fixed << std::setprecision(4);
         const double seconds = perfMs(perfCounter() - began) / 1000;
