@@ -1,6 +1,5 @@
 import SwiftUI
 
-#if DEBUG
 struct DesktopKeyboardButton: View {
     @Bindable var model: AppModel
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
@@ -11,7 +10,7 @@ struct DesktopKeyboardButton: View {
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
                 .hoverEffect { effect,isActive,_ in
-                    effect.opacity(isActive || voiceOverEnabled ? 1 : 0)
+                    effect.opacity(isActive || voiceOverEnabled || !model.stream.hasFrames ? 1 : 0)
                 }
         }
         .buttonStyle(.plain)
@@ -25,7 +24,6 @@ struct DesktopKeyboardButton: View {
         .disabled(model.transitionPending)
     }
 }
-#endif
 
 struct DesktopNavigationButton: View {
     enum Action { case back, focus }
@@ -45,7 +43,7 @@ struct DesktopNavigationButton: View {
                 .frame(width:52,height:52)
                 .background(.thinMaterial,in:Circle())
                 .hoverEffect { effect, isActive, _ in
-                    effect.opacity(isActive || voiceOverEnabled ? 1 : 0)
+                    effect.opacity(isActive || voiceOverEnabled || !model.stream.hasFrames ? 1 : 0)
                 }
         }
         .buttonStyle(.plain)
@@ -62,13 +60,9 @@ struct DesktopNavigationButton: View {
         Task { @MainActor in
             guard !model.transitionPending else { return }
             model.transitionPending = true
-            #if DEBUG
             model.stream.stopControl()
-            #endif
             if action == .back {
-                #if DEBUG
                 model.stream.disconnect()
-                #endif
                 model.destination = .devices
                 openWindow(id:"controls")
             } else if model.isImmersed {

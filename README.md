@@ -2,7 +2,7 @@
 
 A native Apple Vision Pro client and Windows desktop streaming host in one repository.
 
-**Early development.** Live, encrypted, single-display streaming has been demonstrated on a physical Vision Pro. Consumer pairing, a Windows installer, remote input, audio, and robust reconnection are unfinished. There are no public app binaries yet, and no measured end-to-end latency claim. The project name is provisional.
+**Early development.** Live, encrypted, single-display streaming has been demonstrated on a physical Vision Pro. Pointer and keyboard input have also been tested on the headset. Consumer pairing, reconnection and Windows packaging are being prepared for release; audio is outside the initial MVP. There are no public app binaries yet, and no measured end-to-end latency claim. The project name is provisional.
 
 ## Project layout
 
@@ -29,7 +29,7 @@ The generated project uses a placeholder bundle identifier and no signing team. 
 SPATIAL_PC_TEAM=YOUR_TEAM_ID SPATIAL_PC_BUNDLE_ID=YOUR_REGISTERED_BUNDLE_ID python3 scripts/generate_project.py
 ```
 
-Choose a simulator or provisioned Vision Pro in Xcode and run the `SpatialPC` scheme. Use the **Lab** build configuration for performance measurements: it enables Swift optimization while retaining development enrollment. Debug deliberately leaves Swift unoptimized. Actual desktop streaming currently requires the lab provisioning described in the [protocol notes](docs/protocol.md). Release builds exclude that lab client; they are not a complete remote desktop product.
+Choose a simulator or provisioned Vision Pro in Xcode and run the `SpatialPC` scheme. Use the **Lab** build configuration for performance measurements: it enables Swift optimization while retaining development enrollment. Debug deliberately leaves Swift unoptimized. Release includes consumer pairing and streaming; it never imports the development pairing file. The matching consumer Windows host is still undergoing integration and packaging. See [consumer client preparation](docs/client-production-mvp.md) for the setup flow, exact test boundaries, and remaining release gates. The [protocol notes](docs/protocol.md) also describe the separate development enrollment used by Debug/Lab.
 
 ## Windows development
 

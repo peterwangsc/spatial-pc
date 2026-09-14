@@ -5,6 +5,9 @@ import Observation
 final class AppModel {
     let renderer = SyntheticRenderer()
     let discovery = HostDiscovery()
+    let devices = PairedHostStore()
+    let pairing = PairingClient()
+    private var reconnectOnForeground = false
     var isImmersed = false
     var transitionPending = false
     var startupHandled = false
@@ -13,23 +16,16 @@ final class AppModel {
     var error: String?
     var keyboardRequest = 0
     func handleScenePhase(_ phase: ScenePhase) {
-        #if DEBUG
         if phase != .active { stream.stopControl() }
-        #endif
         if phase == .background && !transitionPending {
-            #if DEBUG
+            reconnectOnForeground = stream.active
             stream.disconnect()
-            #endif
             renderer.stop()
         } else if phase == .active {
-            renderer.resume()
-            #if DEBUG
+            if reconnectOnForeground { reconnectOnForeground = false; stream.connect() }
             if !stream.active { stream.refreshPairing() }
-            #endif
         }
     }
-    #if DEBUG
-    let stream: LabStreamClient
-    init() { stream = LabStreamClient(renderer:renderer) }
-    #endif
+    let stream: DesktopStreamClient
+    init() { stream = DesktopStreamClient(renderer:renderer,devices:devices) }
 }

@@ -11,5 +11,5 @@
 <key>UIApplicationSupportsIndirectInputEvents</key><true/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>Find and connect securely to your PC on the local network.</string>
-<key>NSBonjourServices</key><array><string>_spatialpc._tcp</string></array>
+<key>NSBonjourServices</key><array><string>_spatialpc._tcp</string><string>_spatialpc-pair._tcp</string></array>
 </dict></plist>
