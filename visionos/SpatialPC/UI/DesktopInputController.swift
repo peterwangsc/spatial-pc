@@ -50,7 +50,8 @@ import UIKit
         guard delta.x.isFinite,delta.y.isFinite else { stop(); return }
         // UIKit translations follow content movement: down is wheel-up, left is
         // wheel-right. Preserve fractional trackpad movement between events.
-        wheelRemainder.x -= delta.x; wheelRemainder.y += delta.y
+        wheelRemainder.x = min(1200,max(-1200,wheelRemainder.x-delta.x))
+        wheelRemainder.y = min(1200,max(-1200,wheelRemainder.y+delta.y))
         let horizontal = Int32(min(1200,max(-1200,wheelRemainder.x.rounded(.towardZero))))
         let vertical = Int32(min(1200,max(-1200,wheelRemainder.y.rounded(.towardZero))))
         wheelRemainder.x -= CGFloat(horizontal); wheelRemainder.y -= CGFloat(vertical)

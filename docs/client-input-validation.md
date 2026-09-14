@@ -8,8 +8,8 @@ Input is scoped to the desktop view. Back, Focus navigation, pointer exit, keybo
 
 Validation so far:
 
-- Twelve Swift tests pass, including golden network-order bytes, signed wheel values, coordinate bounds, invalid events/keys, queue overflow, adjacent-only movement coalescing, stop priority and positive capability negotiation.
-- Optimized simulator build passes. A loopback-only TLS fixture serves a synthetic 1080p pattern and accepts SPI1 without accessing Windows or injecting OS input. Connection alone produced zero input events. A desktop click produced start/down/up; hardware-keyboard forwarding in Simulator produced key records and returned to zero held keys. Focus navigation produced stop while video continued and the same desktop window remained visible.
+- Fourteen Swift tests pass, including golden network-order bytes, signed wheel values, coordinate bounds, invalid events/keys, queue overflow, adjacent-only movement coalescing, stop priority and positive capability negotiation, held-key limits and inferred modifier release.
+- Optimized simulator, signed device, and Release simulator builds pass. A loopback-only TLS fixture serves a synthetic 1080p pattern and accepts SPI1 without accessing Windows or injecting OS input. Connection alone produced zero input events. A desktop click produced start/down/up; hardware-keyboard forwarding in Simulator produced key records and returned to zero held keys. Focus navigation produced stop while video continued and the same desktop window remained visible.
 - Simulator's gaze/controller emulation did not establish external-pointer hover or scroll behavior; those are not claimed as passed. The physical headset was removed before the pointer-target revision launched. Integrated native Windows input and physical AVP testing remain pending.
 
 The client retains the tested NV12 stream and native-window Focus presentation. Neither the public Release configuration nor an older view-only host silently enables remote control. This development feature does not yet constitute a consumer pairing/permission flow.
