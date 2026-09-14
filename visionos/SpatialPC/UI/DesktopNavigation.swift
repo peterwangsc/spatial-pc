@@ -15,6 +15,9 @@ struct DesktopKeyboardButton: View {
                 }
         }
         .buttonStyle(.plain)
+        // Desktop typing belongs to the remote responder, including Space.
+        // Gaze/pinch, pointer and accessibility activation remain available.
+        .focusable(false)
         .contentShape([.interaction,.hoverEffect],Rectangle())
         .hoverEffect(.highlight)
         .hoverEffectGroup()
@@ -46,6 +49,9 @@ struct DesktopNavigationButton: View {
                 }
         }
         .buttonStyle(.plain)
+        // Desktop typing belongs to the remote responder, including Space.
+        // Gaze/pinch, pointer and accessibility activation remain available.
+        .focusable(false)
         .contentShape([.interaction,.hoverEffect],Rectangle())
         .hoverEffect(.highlight)
         .hoverEffectGroup()
