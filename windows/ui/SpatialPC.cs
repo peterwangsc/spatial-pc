@@ -60,7 +60,7 @@ internal sealed class HostWindow : Form {
         this.background=background;this.development=development;
         Text="Spatial PC";ClientSize=new Size(780,640);MinimumSize=new Size(720,640);
         Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;StartPosition=FormStartPosition.CenterScreen;
-        BackColor=Color.FromArgb(247,249,252);Icon=SystemIcons.Application;
+        BackColor=Color.FromArgb(247,249,252);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         var layout=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(24),ColumnCount=1,RowCount=9 };
         Controls.Add(layout);
         state.Text="Starting Spatial PC…";state.Font=new Font(Font.FontFamily,20,FontStyle.Bold);state.AutoSize=true;
@@ -95,7 +95,7 @@ internal sealed class HostWindow : Form {
         revoke.Text="Revoke selected device";revoke.AutoSize=true;revoke.Enabled=false;
         revoke.Click+=(s,e)=>{ if(devices.SelectedItems.Count==1&&MessageBox.Show(this,"Revoke this device and disconnect its access?","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes)Send("revoke","deviceId",devices.SelectedItems[0].Tag); };
         startup.Text="Open Spatial PC when I sign in";startup.AutoSize=true;startup.Margin=new Padding(20,7,0,0);
-        using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))startup.Checked=key!=null&&key.GetValue("SpatialPC")!=null;
+        using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))startup.Checked=key!=null&&String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase);
         startup.CheckedChanged+=(s,e)=>SetStartup();deviceRow.Controls.Add(revoke);deviceRow.Controls.Add(startup);layout.Controls.Add(deviceRow);
         var footer=new Label { AutoSize=true,MaximumSize=new Size(700,0),ForeColor=Color.DimGray,Text="Closing this window keeps Spatial PC in the notification area. Quit there to stop access. Keyboard navigation on Vision Pro requires Full Keyboard Access to be off." };
         layout.Controls.Add(footer);
@@ -177,6 +177,7 @@ internal sealed class HostWindow : Form {
         } else if(kind=="pairingClosed")ClearPairing();
         else if(kind=="error")details.Text=Convert.ToString(value["message"]);
     }
-    void SetStartup(){try{using(var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")){if(startup.Checked)key.SetValue("SpatialPC","\""+Application.ExecutablePath+"\" --background");else key.DeleteValue("SpatialPC",false);}}catch(Exception){MessageBox.Show(this,"Windows could not update the sign-in preference.","Spatial PC");}}
+    string StartupCommand { get { return "\""+Application.ExecutablePath+"\" --background"; } }
+    void SetStartup(){try{using(var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")){if(startup.Checked)key.SetValue("SpatialPC",StartupCommand);else if(String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase))key.DeleteValue("SpatialPC",false);}}catch(Exception){MessageBox.Show(this,"Windows could not update the sign-in preference.","Spatial PC");}}
     public async Task Quit(){if(quitting)return;quitting=true;timer.Stop();Send("shutdown");outgoing.CompleteAdding();try{if(worker!=null){bool done=await Task.Run(()=>worker.WaitForExit(12000));if(!done)worker.Kill();}}catch(Exception){}tray.Visible=false;tray.Dispose();Close();}
 }

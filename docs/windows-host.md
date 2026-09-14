@@ -13,6 +13,11 @@ uses the .NET Framework 4.8 family included with Windows 11. Python and its pinn
 dependencies are bundled privately; no Python or developer tools are installed
 globally.
 
+Windows N editions also need Microsoft's Media Feature Pack. ARM64 emulation is
+outside the initial Windows package. The native binaries import Windows media,
+graphics and input libraries; the package includes the runtime DLLs required by
+the bundled Python extensions.
+
 Install per user, open Spatial PC, select your Private network, then choose
 **Set up network**. The administrator prompt permits only this installation's
 runtime on TCP47990/47991 and UDP5353, Private profile, LocalSubnet, with no edge

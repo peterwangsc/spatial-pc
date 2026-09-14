@@ -28,6 +28,7 @@ try {
     Copy-Item windows/host/product/*.py -Destination (Join-Path $appRoot 'host/product')
     Copy-Item windows/host/input_protocol.py,windows/host/input_server.py,windows/host/transport_metrics.py -Destination (Join-Path $appRoot 'host')
     Copy-Item .local/product/SpatialPC.exe,windows/package/SpatialPC.exe.config -Destination $appRoot
+    Copy-Item windows/ui/SpatialPC.ico -Destination $appRoot
     Copy-Item .local/capture_probe.exe -Destination (Join-Path $appRoot 'native/capture.exe')
     Copy-Item .local/input_bridge.exe -Destination (Join-Path $appRoot 'native/input_bridge.exe')
     Copy-Item LICENSE -Destination (Join-Path $appRoot 'LICENSE.txt')

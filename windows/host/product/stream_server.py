@@ -23,14 +23,23 @@ class StreamServer:
         if device is None:raise ValueError('Revoked or unpaired peer')
         owner=CaptureOwner();self.connected_id=device['id'];self.session_task=asyncio.current_task()
         self.notify(dict(event='connecting',name=device['name']))
+        started=False;failure=None
+        def ready(caps):
+            nonlocal started
+            started=True
+            self.notify(dict(event='connected',name=device['name'],width=caps['width'],height=caps['height']))
         try:
             await run_session(reader,writer,{'clientSHA256':fingerprint},self.capture,self.bridge,
                 self.identity.directory/'session',time.monotonic()+600,report=self.report,
-                ready=lambda caps:self.notify(dict(event='connected',name=device['name'],width=caps['width'],height=caps['height'])),
+                ready=ready,
                 capture_owner=owner.assign)
+        except (OSError,ValueError,EOFError,TimeoutError,asyncio.IncompleteReadError):
+            if not started:failure='The desktop could not start. Check that a display is active, update your GPU driver, and use the latest Spatial PC on both devices.'
         finally:
             owner.close();self.connected_id=None;self.session_task=None
-            self.notify(dict(event='disconnected'))
+            event=dict(event='disconnected')
+            if failure:event['message']=failure
+            self.notify(event)
 
     def report(self,line,**ignored):
         # Bounded metadata is kept in memory for support, never sent as arbitrary

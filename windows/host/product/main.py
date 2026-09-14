@@ -36,7 +36,7 @@ class Worker:
                           str(value['width'])+' × '+str(value['height'])+' · one physical display · encrypted LAN connection')
             self.status()
         elif kind=='disconnected':
-            self.connected='';self.message='The device disconnected. You can reconnect from Vision Pro.';self.status()
+            self.connected='';self.message=value.get('message','The device disconnected. You can reconnect from Vision Pro.');self.status()
         else:
             self.notify(value)
             if kind=='paired':self.status()
