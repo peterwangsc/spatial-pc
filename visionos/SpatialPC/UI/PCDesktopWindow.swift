@@ -97,6 +97,9 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         inFlight = true; submittedFrame = revision; submittedSize = drawableSize
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(frame.texture,index:0)
+        encoder.setFragmentTexture(frame.chroma ?? frame.texture,index:1)
+        var conversion = frame.conversion
+        encoder.setFragmentBytes(&conversion,length:MemoryLayout<VideoColorConversion>.stride,index:0)
         encoder.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3)
         encoder.endEncoding()
         frame.command.present(drawable)
