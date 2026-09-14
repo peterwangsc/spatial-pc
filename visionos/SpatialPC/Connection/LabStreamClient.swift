@@ -14,6 +14,18 @@ final class LabStreamClient {
     private(set) var connected = false
     private(set) var active = false
     private(set) var hasFrames = false
+    private(set) var inputAvailable = false
+    private(set) var textAvailable = false
+    @ObservationIgnored private var keyPressEvents = 0
+    @ObservationIgnored private var navigationKeyCommands = 0
+    @ObservationIgnored private var committedTextCallbacks = 0
+    @ObservationIgnored private var keyboardFirstResponder = false
+    @ObservationIgnored private var keyboardPresentationRequested = false
+    @ObservationIgnored private(set) var controlling = false
+    @ObservationIgnored private var inputOutbox = InputWire.Outbox()
+    @ObservationIgnored private var inputWriter: Task<Void,Never>?
+    @ObservationIgnored private var inputHeartbeat: Task<Void,Never>?
+    @ObservationIgnored private var inputWriteStarted: ContinuousClock.Instant?
     @ObservationIgnored private(set) var receivedFrames = 0
     @ObservationIgnored private(set) var decodeMS = 0.0
     @ObservationIgnored private(set) var hardwareDecoder = false
@@ -36,8 +48,21 @@ final class LabStreamClient {
             let frames: Int
             let decodeMS: Double
             let hardwareDecoder: Bool
+            let inputAvailable: Bool
+            let controlling: Bool
+            let queuedInputEvents: Int
+            let textAvailable: Bool
+            let keyPressEvents: Int
+            let navigationKeyCommands: Int
+            let committedTextCallbacks: Int
+            let keyboardFirstResponder: Bool
+            let keyboardPresentationRequested: Bool
         }
-        let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder)
+        let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder,
+                                inputAvailable:inputAvailable,controlling:controlling,queuedInputEvents:inputOutbox.events.count,
+                                textAvailable:textAvailable,keyPressEvents:keyPressEvents,navigationKeyCommands:navigationKeyCommands,
+                                committedTextCallbacks:committedTextCallbacks,keyboardFirstResponder:keyboardFirstResponder,
+                                keyboardPresentationRequested:keyboardPresentationRequested)
         diagnosticsQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) {
                 try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
@@ -51,6 +76,11 @@ final class LabStreamClient {
         } catch { available = false; status = "Lab enrollment could not be loaded: \(error)"; userMessage = "Your saved pairing could not be loaded. Set up this PC again." }
     }
     func disconnect() {
+        controlling = false; inputAvailable = false; textAvailable = false
+        keyPressEvents = 0; navigationKeyCommands = 0; committedTextCallbacks = 0; keyboardFirstResponder = false; keyboardPresentationRequested = false
+        inputHeartbeat?.cancel(); inputHeartbeat = nil
+        inputWriter?.cancel(); inputWriter = nil; inputWriteStarted = nil
+        inputOutbox = InputWire.Outbox()
         generation = UUID(); connection?.cancel(); connection = nil; connected = false; active = false; hasFrames = false
         renderer.endVideo(); status = "Disconnected"; userMessage = nil
     }
@@ -105,6 +135,68 @@ final class LabStreamClient {
             connection.start(queue:queue)
         } catch { status = "Could not authenticate the lab pair: \(error)"; connection?.cancel(); connection = nil; active = false; userMessage = "Could not use this saved pairing. Set up the PC again." }
     }
+    @discardableResult func startControl() -> Bool {
+        guard inputAvailable,hasFrames,connection != nil else { return false }
+        if controlling { return true }
+        controlling = true; enqueueInput(.start)
+        guard controlling else { return false }
+        saveDiagnostics()
+        let sessionID = generation
+        inputHeartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for:.milliseconds(500)) } catch { return }
+                guard let self,self.generation == sessionID,self.controlling else { return }
+                if let began = self.inputWriteStarted,began.duration(to:.now) > .milliseconds(1500) {
+                    self.failInput(); return
+                }
+                self.enqueueInput(.heartbeat)
+            }
+        }
+        return controlling
+    }
+    func stopControl() {
+        guard controlling else { return }
+        controlling = false; inputHeartbeat?.cancel(); inputHeartbeat = nil
+        enqueueInput(.stop); saveDiagnostics()
+    }
+    func sendInput(_ event:InputWire.Event) {
+        guard controlling,inputAvailable else { return }
+        guard event.type != 8 || textAvailable else { return }
+        enqueueInput(event)
+    }
+    func recordKeyboardFocus(_ focused:Bool) { keyboardFirstResponder = focused; saveDiagnostics() }
+    func recordKeyboardPresentation(_ requested:Bool) { keyboardPresentationRequested = requested; saveDiagnostics() }
+    func recordKeyPresses(_ count:Int) { keyPressEvents += count }
+    func recordNavigationKeyCommand() { navigationKeyCommands += 1 }
+    func recordTextCallback() { committedTextCallbacks += 1 }
+    private func failInput() {
+        disconnect(); status = "Input session ended safely."
+        userMessage = "The input connection ended. Reconnect to your PC."
+    }
+    private func enqueueInput(_ event:InputWire.Event) {
+        guard inputAvailable,let connection else { return }
+        do { try inputOutbox.append(event) } catch { failInput(); return }
+        guard inputWriter == nil else { return }
+        let sessionID = generation
+        inputWriter = Task { [weak self] in
+            guard let self else { return }
+            do {
+                while self.generation == sessionID,!Task.isCancelled,!self.inputOutbox.events.isEmpty {
+                    let packet = try self.inputOutbox.take(2)
+                    self.inputWriteStarted = .now
+                    try await self.send(packet,on:connection)
+                    guard self.generation == sessionID else { return }
+                    self.inputWriteStarted = nil
+                    // At most two records per 1/120 second, matching the host's
+                    // 240/s limit. Adjacent pointer motion is coalesced in Outbox.
+                    try await Task.sleep(for:.nanoseconds(8_333_334))
+                }
+                if self.generation == sessionID { self.inputWriter = nil }
+            } catch {
+                if self.generation == sessionID { self.failInput() }
+            }
+        }
+    }
     nonisolated private func send(_ data: Data, on connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
             connection.send(content:data,completion:.contentProcessed { error in
@@ -130,13 +222,15 @@ final class LabStreamClient {
     }
     private func receiveStream(_ connection: NWConnection, sessionID: UUID) async {
         do {
-            let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192}".utf8)
+            let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192,\"input\":{\"version\":1,\"textVersion\":1}}".utf8)
             var hello = Data("SPC1".utf8); var length = UInt32(payload.count).bigEndian
             withUnsafeBytes(of:&length) { hello.append(contentsOf:$0) }; hello.append(payload)
             try await send(hello,on:connection)
             let count = try StreamWire.helloLength(await receive(8,on:connection))
             let capabilities = try StreamWire.capabilities(await receive(count,on:connection))
             guard generation == sessionID else { return }
+            inputAvailable = capabilities.input?.supported == true
+            textAvailable = capabilities.input?.supportsText == true
             let decoder = H264Decoder(width:capabilities.width,height:capabilities.height)
             await renderer.prepareVideo(width:capabilities.width,height:capabilities.height)
             guard generation == sessionID else {

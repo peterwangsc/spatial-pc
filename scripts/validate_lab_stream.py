@@ -22,15 +22,19 @@ def context(client=True,trusted=True):
  return c
 def connect(c):
  return c.wrap_socket(socket.create_connection((pair['host'],pair['port']),timeout=10),server_hostname=pair['serverName'])
+hello=json.dumps(dict(version=1,codecs=['h264-annexb'],maxWidth=8192,maxHeight=8192)).encode()
 for label,c in [('missing-client-certificate',context(False)),('untrusted-host',context(trusted=False))]:
  try:
-  with connect(c) as s:s.sendall(b'SPC1'+struct.pack('!I',2)+b'{}');s.recv(1)
- except ssl.SSLError:print(label+' rejected',flush=True)
- else:raise AssertionError(label+' unexpectedly accepted')
+  with connect(c) as s:
+   # Send an otherwise valid hello so malformed application input cannot mask
+   # an authentication failure. TLS 1.3 rejection may surface as EOF or reset.
+   s.sendall(b'SPC1'+struct.pack('!I',len(hello))+hello)
+   if s.recv(1):raise AssertionError(label+' unexpectedly accepted')
+ except (ssl.SSLError,ConnectionResetError,BrokenPipeError):pass
+ print(label+' rejected',flush=True)
 with connect(context()) as s:
  assert hashlib.sha256(s.getpeercert(binary_form=True)).hexdigest()==pair['serverSHA256']
  print('tls='+s.version()+' alpn='+str(s.selected_alpn_protocol()),flush=True)
- hello=json.dumps(dict(version=1,codecs=['h264-annexb'],maxWidth=8192,maxHeight=8192)).encode()
  s.sendall(b'SPC1'+struct.pack('!I',len(hello))+hello)
  header=exact(s,8);assert header[:4]==b'SPC1'
  count=struct.unpack('!I',header[4:])[0];assert count<=4096
