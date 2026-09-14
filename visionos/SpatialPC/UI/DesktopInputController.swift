@@ -10,6 +10,7 @@ import UIKit
     private var buttons = Set<Int32>()
     private var wheelRemainder = CGPoint.zero
     var available: Bool { stream.inputAvailable && stream.hasFrames }
+    var textAvailable: Bool { stream.textAvailable && available }
     init(view:UIView,stream:LabStreamClient) {
         self.view = view; self.stream = stream
         super.init()
@@ -36,10 +37,26 @@ import UIKit
         guard stream.startControl() else { return false }
         view?.becomeFirstResponder(); return true
     }
+    func keyboardFocusChanged(_ focused:Bool) { stream.recordKeyboardFocus(focused) }
+    func keyboardPresentationChanged(_ requested:Bool) { stream.recordKeyboardPresentation(requested) }
+    func activateKeyboard() -> Bool { start() }
+    func insertText(_ text:String) {
+        stream.recordTextCallback()
+        guard textAvailable,view?.isFirstResponder == true,start() else { return }
+        do { for event in try InputWire.textEvents(text) { stream.sendInput(event) } }
+        catch { stop() }
+    }
+    func deleteBackward() {
+        stream.recordTextCallback()
+        guard textAvailable,view?.isFirstResponder == true,start() else { return }
+        stream.sendInput(.key(0x2A,down:true)); stream.sendInput(.key(0x2A,down:false))
+    }
     @objc private func hovered(_ gesture:UIHoverGestureRecognizer) {
         guard let view else { return }
         if gesture.state == .ended || gesture.state == .cancelled {
-            stop(); view.resignFirstResponder(); return
+            // Release remote holds on pointer exit, but keep the native text
+            // responder available to its separate system keyboard window.
+            stop(); return
         }
         guard stream.controlling,let (x,y) = position(gesture.location(in:view)) else { return }
         stream.sendInput(.position(x:x,y:y))
@@ -84,12 +101,18 @@ import UIKit
         return result
     }
     func presses(_ presses:Set<UIPress>,down:Bool) -> Bool {
-        guard stream.controlling,view?.isFirstResponder == true else { return false }
+        stream.recordKeyPresses(presses.count)
+        guard view?.isFirstResponder == true else { return false }
         // Modifiers first when UIKit delivers a set of simultaneous presses.
         let ordered = presses.compactMap(\.key).sorted { a,b in
             let am = a.keyCode.rawValue >= 0xE0,bm = b.keyCode.rawValue >= 0xE0
             return am != bm ? am : a.keyCode.rawValue < b.keyCode.rawValue
         }
+        // Events without physical HID information must continue through UIKit's
+        // text system, which can deliver a committed insertText callback.
+        guard !ordered.isEmpty else { return false }
+        if down { guard start() else { return false } }
+        guard stream.controlling else { return true }
         for key in ordered {
             let usage = Int32(key.keyCode.rawValue)
             do {

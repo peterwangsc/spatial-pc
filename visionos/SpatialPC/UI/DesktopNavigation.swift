@@ -1,5 +1,29 @@
 import SwiftUI
 
+#if DEBUG
+struct DesktopKeyboardButton: View {
+    @Bindable var model: AppModel
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    var body: some View {
+        Button { model.keyboardRequest += 1 } label: {
+            Image(systemName:"keyboard")
+                .font(.title3.weight(.semibold))
+                .frame(width:52,height:52)
+                .background(.thinMaterial,in:Circle())
+                .hoverEffect { effect,isActive,_ in
+                    effect.opacity(isActive || voiceOverEnabled ? 1 : 0)
+                }
+        }
+        .buttonStyle(.plain)
+        .contentShape([.interaction,.hoverEffect],Rectangle())
+        .hoverEffect(.highlight)
+        .hoverEffectGroup()
+        .accessibilityLabel("Toggle Keyboard")
+        .disabled(model.transitionPending)
+    }
+}
+#endif
+
 struct DesktopNavigationButton: View {
     enum Action { case back, focus }
     @Bindable var model: AppModel

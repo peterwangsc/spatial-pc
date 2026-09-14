@@ -11,12 +11,19 @@ struct PCDesktopWindow: View {
     private var aspect: CGFloat { CGFloat(model.renderer.dimensions.x) / CGFloat(model.renderer.dimensions.y) }
 
     var body: some View {
-        DesktopMetalSurface(model:model,aspect:aspect)
+        DesktopMetalSurface(model:model,aspect:aspect,keyboardRequest:model.keyboardRequest)
             .frame(minWidth:480,minHeight:480/aspect)
             .ignoresSafeArea()
             .contentShape(Rectangle())
             .overlay(alignment:.topLeading) { DesktopNavigationButton(model:model,action:.back).padding(12) }
-            .overlay(alignment:.topTrailing) { DesktopNavigationButton(model:model,action:.focus).padding(12) }
+            .overlay(alignment:.topTrailing) {
+                HStack(spacing:8) {
+                    #if DEBUG
+                    if model.stream.textAvailable { DesktopKeyboardButton(model:model) }
+                    #endif
+                    DesktopNavigationButton(model:model,action:.focus)
+                }.padding(12)
+            }
             .task {
                 // A restored desktop has no surviving network session after a cold launch.
                 if !model.startupHandled { openWindow(id:"controls") }
@@ -49,8 +56,14 @@ struct PCDesktopWindow: View {
 private struct DesktopMetalSurface: UIViewRepresentable {
     let model: AppModel
     let aspect: CGFloat
+    let keyboardRequest: Int
     func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(model:model,aspect:aspect) }
-    func updateUIView(_ view:DesktopMetalView,context:Context) { view.setAspect(aspect) }
+    func updateUIView(_ view:DesktopMetalView,context:Context) {
+        view.setAspect(aspect)
+        #if DEBUG
+        view.updateKeyboardRequest(keyboardRequest)
+        #endif
+    }
     static func dismantleUIView(_ view:DesktopMetalView,coordinator:()) { view.isPaused = true; view.delegate = nil }
 }
 
@@ -64,6 +77,9 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     private var inFlight = false
     #if DEBUG
     private var input: DesktopInputController?
+    private var keyboardRequest = 0
+    private var showsSystemKeyboard = false
+    private let suppressedKeyboard = UIView(frame:.zero)
     #endif
 
     init(model:AppModel,aspect:CGFloat) {
@@ -100,7 +116,26 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     }
     #if DEBUG
     override var canBecomeFirstResponder: Bool { input?.available == true }
-    override func resignFirstResponder() -> Bool { input?.stop(); return super.resignFirstResponder() }
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        input?.keyboardFocusChanged(isFirstResponder); return accepted
+    }
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { input?.stop() }
+        input?.keyboardFocusChanged(isFirstResponder); return accepted
+    }
+    override var inputView: UIView? { showsSystemKeyboard ? nil : suppressedKeyboard }
+    func updateKeyboardRequest(_ request:Int) {
+        guard keyboardRequest != request else { return }
+        keyboardRequest = request
+        guard input?.textAvailable == true else { return }
+        showsSystemKeyboard.toggle()
+        input?.keyboardPresentationChanged(showsSystemKeyboard)
+        guard input?.activateKeyboard() == true else { return }
+        reloadInputViews()
+    }
+    override func canPerformAction(_ action:Selector,withSender sender:Any?) -> Bool { false }
     override func touchesBegan(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.began) }
     override func touchesMoved(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.moved) }
     override func touchesEnded(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.ended) }
@@ -165,3 +200,17 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         frame.command.commit()
     }
 }
+
+#if DEBUG
+extension DesktopMetalView: UIKeyInput {
+    var hasText: Bool { true } // Remote selection is unknown; always permit Delete.
+    var autocorrectionType: UITextAutocorrectionType { get { .no } set {} }
+    var autocapitalizationType: UITextAutocapitalizationType { get { .none } set {} }
+    var spellCheckingType: UITextSpellCheckingType { get { .no } set {} }
+    var smartQuotesType: UITextSmartQuotesType { get { .no } set {} }
+    var smartDashesType: UITextSmartDashesType { get { .no } set {} }
+    var smartInsertDeleteType: UITextSmartInsertDeleteType { get { .no } set {} }
+    func insertText(_ text:String) { input?.insertText(text) }
+    func deleteBackward() { input?.deleteBackward() }
+}
+#endif

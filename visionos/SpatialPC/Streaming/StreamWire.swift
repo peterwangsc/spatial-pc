@@ -20,6 +20,8 @@ enum StreamWire {
         let maxEventsPerSecond: Int?
         let heartbeatMS: Int?
         let leaseMS: Int?
+        let textVersion: Int?
+        var supportsText: Bool { supported && textVersion == 1 }
         var supported: Bool {
             version == 1 && enabled == true && wire == "SPI1" && recordBytes == 24 &&
             maxEventsPerSecond == 240 && heartbeatMS == 500 && leaseMS == 2000

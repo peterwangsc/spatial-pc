@@ -25,6 +25,7 @@ enum InputWire {
             case 3: guard flags == 0,(-1200...1200).contains(a),(-1200...1200).contains(b),c == 0 else { throw Failure.invalid }
             case 4: guard [UInt8(0),1,3].contains(flags),allowedKey(a),b == 0,c == 0 else { throw Failure.invalid }
             case 5...7: guard flags == 0,a == 0,b == 0,c == 0 else { throw Failure.invalid }
+            case 8: guard flags == 0,allowedScalar(a),b == 0,c == 0 else { throw Failure.invalid }
             default: throw Failure.invalid
             }
         }
@@ -40,6 +41,28 @@ enum InputWire {
     }
     static func allowedKey(_ key:Int32) -> Bool {
         (0x04...0x45).contains(key) || (0x49...0x65).contains(key) || (0xE0...0xE7).contains(key)
+    }
+    static func allowedScalar(_ value:Int32) -> Bool {
+        (0x20...0x10FFFF).contains(value) && !(0x7F...0x9F).contains(value) && !(0xD800...0xDFFF).contains(value)
+    }
+    /// Committed text only, with a bounded batch. Never infer a Windows layout.
+    static func textEvents(_ text:String) throws -> [Event] {
+        var events = [Event]()
+        var carriageReturn = false
+        for scalar in text.unicodeScalars {
+            let value = Int32(scalar.value)
+            if value == 10 && carriageReturn { carriageReturn = false; continue }
+            carriageReturn = value == 13
+            if value == 10 || value == 13 || value == 9 {
+                let key:Int32 = value == 9 ? 0x2B : 0x28
+                events += [.key(key,down:true),.key(key,down:false)]
+            } else {
+                guard allowedScalar(value) else { throw Failure.invalid }
+                events.append(Event(type:8,a:value))
+            }
+            guard events.count <= 64 else { throw Failure.overflow }
+        }
+        return events
     }
     static func coordinate(_ value:Double,extent:Double) -> Int32? {
         guard value.isFinite,extent.isFinite,extent > 0 else { return nil }

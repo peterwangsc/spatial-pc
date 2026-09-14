@@ -49,6 +49,10 @@ final class InputWireTests: XCTestCase {
         XCTAssertEqual(future.input?.supported,false)
         let current = try StreamWire.capabilities(Data((prefix+",\"input\":{\"version\":1,\"enabled\":true,\"wire\":\"SPI1\",\"recordBytes\":24,\"maxEventsPerSecond\":240,\"heartbeatMS\":500,\"leaseMS\":2000}}").utf8))
         XCTAssertEqual(current.input?.supported,true)
+        XCTAssertEqual(current.input?.supportsText,false)
+        let textJSON = prefix+",\"input\":{\"version\":1,\"enabled\":true,\"wire\":\"SPI1\",\"recordBytes\":24,\"maxEventsPerSecond\":240,\"heartbeatMS\":500,\"leaseMS\":2000,\"textVersion\":1}}"
+        XCTAssertEqual(try StreamWire.capabilities(Data(textJSON.utf8)).input?.supportsText,true)
+        XCTAssertEqual(try StreamWire.capabilities(Data(textJSON.replacingOccurrences(of:"\"textVersion\":1",with:"\"textVersion\":99").utf8)).input?.supportsText,false)
     }
     func testModifierHeldBeforeControlIsReleasedByItsPhysicalSide() throws {
         var keyboard = InputWire.KeyboardState()
@@ -74,6 +78,26 @@ final class InputWireTests: XCTestCase {
         XCTAssertTrue(keyboard.held.isEmpty)
         for key:Int32 in 4..<36 { _ = try keyboard.change(key,down:true,modifiers:0) }
         XCTAssertThrowsError(try keyboard.change(36,down:true,modifiers:0))
+    }
+    func testCommittedUnicodeAndNewlines() throws {
+        let events = try InputWire.textEvents("Aé🙂\r\n\t")
+        XCTAssertEqual(events,[.init(type:8,a:65),.init(type:8,a:233),.init(type:8,a:0x1F642),
+                               .key(0x28,down:true),.key(0x28,down:false),.key(0x2B,down:true),.key(0x2B,down:false)])
+        let bytes = try events[2].encoded(sequence:9)
+        XCTAssertEqual(Array(bytes[12..<16]),[0,1,0xF6,0x42])
+        XCTAssertEqual(bytes.count,24)
+    }
+    func testCommittedTextBoundsAndInvalidScalars() throws {
+        for scalar:Int32 in [-1,0,0x1F,0x7F,0x85,0x9F,0xD800,0xDFFF,0x110000] {
+            XCTAssertThrowsError(try InputWire.Event(type:8,a:scalar).encoded(sequence:1))
+        }
+        for scalar:Int32 in [0x20,0x7E,0xA0,0xD7FF,0xE000,0x10FFFF] {
+            XCTAssertNoThrow(try InputWire.Event(type:8,a:scalar).encoded(sequence:1))
+        }
+        XCTAssertThrowsError(try InputWire.textEvents("a\u{1B}b"))
+        XCTAssertThrowsError(try InputWire.textEvents(String(repeating:"a",count:65)))
+        XCTAssertEqual(try InputWire.textEvents(String(repeating:"a",count:64)).count,64)
+        XCTAssertThrowsError(try InputWire.textEvents(String(repeating:"\n",count:33)))
     }
 
 }

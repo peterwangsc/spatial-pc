@@ -15,6 +15,11 @@ final class LabStreamClient {
     private(set) var active = false
     private(set) var hasFrames = false
     private(set) var inputAvailable = false
+    private(set) var textAvailable = false
+    @ObservationIgnored private var keyPressEvents = 0
+    @ObservationIgnored private var committedTextCallbacks = 0
+    @ObservationIgnored private var keyboardFirstResponder = false
+    @ObservationIgnored private var keyboardPresentationRequested = false
     @ObservationIgnored private(set) var controlling = false
     @ObservationIgnored private var inputOutbox = InputWire.Outbox()
     @ObservationIgnored private var inputWriter: Task<Void,Never>?
@@ -45,9 +50,17 @@ final class LabStreamClient {
             let inputAvailable: Bool
             let controlling: Bool
             let queuedInputEvents: Int
+            let textAvailable: Bool
+            let keyPressEvents: Int
+            let committedTextCallbacks: Int
+            let keyboardFirstResponder: Bool
+            let keyboardPresentationRequested: Bool
         }
         let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder,
-                                inputAvailable:inputAvailable,controlling:controlling,queuedInputEvents:inputOutbox.events.count)
+                                inputAvailable:inputAvailable,controlling:controlling,queuedInputEvents:inputOutbox.events.count,
+                                textAvailable:textAvailable,keyPressEvents:keyPressEvents,
+                                committedTextCallbacks:committedTextCallbacks,keyboardFirstResponder:keyboardFirstResponder,
+                                keyboardPresentationRequested:keyboardPresentationRequested)
         diagnosticsQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) {
                 try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
@@ -61,7 +74,8 @@ final class LabStreamClient {
         } catch { available = false; status = "Lab enrollment could not be loaded: \(error)"; userMessage = "Your saved pairing could not be loaded. Set up this PC again." }
     }
     func disconnect() {
-        controlling = false; inputAvailable = false
+        controlling = false; inputAvailable = false; textAvailable = false
+        keyPressEvents = 0; committedTextCallbacks = 0; keyboardFirstResponder = false
         inputHeartbeat?.cancel(); inputHeartbeat = nil
         inputWriter?.cancel(); inputWriter = nil; inputWriteStarted = nil
         inputOutbox = InputWire.Outbox()
@@ -145,8 +159,13 @@ final class LabStreamClient {
     }
     func sendInput(_ event:InputWire.Event) {
         guard controlling,inputAvailable else { return }
+        guard event.type != 8 || textAvailable else { return }
         enqueueInput(event)
     }
+    func recordKeyboardFocus(_ focused:Bool) { keyboardFirstResponder = focused; saveDiagnostics() }
+    func recordKeyboardPresentation(_ requested:Bool) { keyboardPresentationRequested = requested; saveDiagnostics() }
+    func recordKeyPresses(_ count:Int) { keyPressEvents += count }
+    func recordTextCallback() { committedTextCallbacks += 1 }
     private func failInput() {
         disconnect(); status = "Input session ended safely."
         userMessage = "The input connection ended. Reconnect to your PC."
@@ -200,7 +219,7 @@ final class LabStreamClient {
     }
     private func receiveStream(_ connection: NWConnection, sessionID: UUID) async {
         do {
-            let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192,\"input\":{\"version\":1}}".utf8)
+            let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192,\"input\":{\"version\":1,\"textVersion\":1}}".utf8)
             var hello = Data("SPC1".utf8); var length = UInt32(payload.count).bigEndian
             withUnsafeBytes(of:&length) { hello.append(contentsOf:$0) }; hello.append(payload)
             try await send(hello,on:connection)
@@ -208,6 +227,7 @@ final class LabStreamClient {
             let capabilities = try StreamWire.capabilities(await receive(count,on:connection))
             guard generation == sessionID else { return }
             inputAvailable = capabilities.input?.supported == true
+            textAvailable = capabilities.input?.supportsText == true
             let decoder = H264Decoder(width:capabilities.width,height:capabilities.height)
             await renderer.prepareVideo(width:capabilities.width,height:capabilities.height)
             guard generation == sessionID else {
