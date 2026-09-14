@@ -22,6 +22,7 @@ final class AppModel {
             stream.disconnect()
             renderer.stop()
         } else if phase == .active {
+            if devices.error != nil { devices.reload() }
             if reconnectOnForeground { reconnectOnForeground = false; stream.connect() }
             if !stream.active { stream.refreshPairing() }
         }

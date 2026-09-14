@@ -25,6 +25,10 @@ private final class PeerCertificate: @unchecked Sendable {
     }
     func begin(endpoint:NWEndpoint,address:String,serviceName:String?,domain:String?,hostName:String,code:String,store:PairedHostStore) {
         cancel(); phase = .connecting
+        guard store.error == nil else {
+            phase = .failed; error = "Saved devices are unavailable. Unlock the headset and try again."
+            return
+        }
         let request = generation
         operation = Task { [weak self] in
             guard let self else { return }

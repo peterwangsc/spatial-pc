@@ -34,13 +34,18 @@ struct SavedHost: Codable, Identifiable, Equatable {
     var selected:SavedHost? { hosts.first { $0.id == selectedID } }
     private struct Archive:Codable { var hosts:[SavedHost]; var selectedID:String? }
     private static let service = "com.golfcore.spatialpc.paired-hosts.v1"
-    init() {
+    @ObservationIgnored private let loadData:() throws -> Data?
+    @ObservationIgnored private let saveData:(Data) throws -> Void
+    init(load:@escaping () throws -> Data? = { try DeviceKeychain.data(service:PairedHostStore.service,account:"hosts") },
+         save:@escaping (Data) throws -> Void = { try DeviceKeychain.save($0,service:PairedHostStore.service,account:"hosts") },
+         cleanAbandoned:(Set<String>) -> Void = { DeviceKeychain.removeAbandonedEnrollments(keeping:$0) }) {
+        loadData = load; saveData = save
         reload()
-        if error == nil { DeviceKeychain.removeAbandonedEnrollments(keeping:Set(hosts.map(\.keyTag))) }
+        if error == nil { cleanAbandoned(Set(hosts.map(\.keyTag))) }
     }
     func reload() {
         do {
-            guard let data = try DeviceKeychain.data(service:Self.service,account:"hosts") else { hosts = []; selectedID = nil; error = nil; return }
+            guard let data = try loadData() else { hosts = []; selectedID = nil; error = nil; return }
             guard data.count <= 1_048_576 else { throw PairingWire.Failure.oversized }
             let archive = try JSONDecoder().decode(Archive.self,from:data)
             guard Set(archive.hosts.map(\.id)).count == archive.hosts.count else { throw PairingWire.Failure.invalidMessage }
@@ -48,9 +53,12 @@ struct SavedHost: Codable, Identifiable, Equatable {
         } catch { self.error = "Saved devices could not be loaded. Unlock the headset and try again." }
     }
     private func save(_ hosts:[SavedHost],selected:String?) throws {
+        // A locked or unreadable archive is not an empty device list. Require a
+        // successful reload before any mutation can replace the stored archive.
+        guard error == nil else { throw PairingWire.Failure.authentication }
         let data = try JSONEncoder().encode(Archive(hosts:hosts,selectedID:selected))
         guard data.count <= 1_048_576 else { throw PairingWire.Failure.oversized }
-        try DeviceKeychain.save(data,service:Self.service,account:"hosts")
+        try saveData(data)
         self.hosts = hosts; selectedID = selected; error = nil
     }
     func select(_ host:SavedHost) throws {

@@ -61,6 +61,7 @@ struct ControlCenter: View {
                     Text("My Devices").font(.largeTitle.bold())
                     Spacer()
                     Button("Add Device",systemImage:"plus") { devicesOpen = true }
+                        .disabled(model.devices.error != nil)
                 }
             }
             if model.devices.hosts.count > 1 {
@@ -97,6 +98,9 @@ struct ControlCenter: View {
                 Text("No devices added").foregroundStyle(.secondary).padding(.vertical,24)
             }
             if let error = model.devices.error ?? model.error { Text(error).foregroundStyle(.orange) }
+            if model.devices.error != nil {
+                Button("Try Again") { model.devices.reload(); model.stream.refreshPairing() }
+            }
             if let failure = model.stream.userMessage {
                 Label(failure,systemImage:"exclamationmark.circle").foregroundStyle(.orange).font(.callout)
             }
