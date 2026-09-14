@@ -1,6 +1,7 @@
 """M1 test harness: mutually authenticated TLS 1.3, native capture/encode child.
 
-Run only in the interactive Windows session. No input, audio, clipboard, WAN,
+Run only in the interactive Windows session. Input defaults disabled; negotiated
+native input requires explicit --enable-input and --input-bridge. No audio, clipboard, WAN,
 installation, or automatic startup. Desktop frames stay in memory. A client must
 present the provisioned certificate before capture begins. Connections have a
 ten-minute limit and stall timeout; disconnect terminates the capture child.
@@ -169,5 +170,13 @@ if __name__ == '__main__':
     parser.add_argument('--capture', type=Path, required=True)
     parser.add_argument('--bind', required=True)
     parser.add_argument('--lifetime', type=int, default=1800)
+    parser.add_argument('--enable-input', action='store_true', help='Explicitly allow negotiated SPI1 input for the paired client')
+    parser.add_argument('--input-bridge', type=Path)
     args = parser.parse_args()
-    serve(args.credentials, args.capture, args.bind, args.lifetime)
+    if args.enable_input:
+        if not args.input_bridge or not args.input_bridge.is_file():
+            parser.error('--enable-input requires a native --input-bridge executable')
+        from input_server import serve_input
+        serve_input(args.credentials, args.capture, args.input_bridge, args.bind, args.lifetime)
+    else:
+        serve(args.credentials, args.capture, args.bind, args.lifetime)
