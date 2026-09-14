@@ -66,6 +66,12 @@ capture on EOF, including a parent failure before Job assignment. Input uses its
 separate EOF cleanup so it can release owned keys and buttons. Native continuous
 lifetime is explicit; default lab command lines keep their original time limits.
 
+Accepted TCP peers enable keepalive after 10 idle seconds, with 2-second probe
+intervals and 3 unanswered probes. This lets Windows detect a vanished peer even
+when a static desktop emits no frames. Socket-option readback and healthy idle
+connections are tested; physical network-loss recovery still needs device
+acceptance. These are per-connection settings, not system-wide network changes.
+
 Update and uninstall ask only this user's Spatial PC UI to quit, then wait for
 bounded cleanup. Uninstall removes this installation's firewall rules (with
 administrator permission if configured) and its own sign-in entry. Protected
