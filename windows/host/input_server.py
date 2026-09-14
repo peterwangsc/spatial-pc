@@ -53,7 +53,7 @@ async def close_child(child, graceful=False):
             raise RuntimeError('Child cleanup deadline exceeded') from error
 
 
-async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline):
+async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline, *, report=print, ready=None, capture_owner=None):
     capture = bridge = None
     gate = None
     completed = []
@@ -75,6 +75,8 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
         with (directory.parent/'encoder.log').open('w') as encoder_log, (directory.parent/'input-status.log').open('w') as input_log:
             capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', stdout=asyncio.subprocess.PIPE,
                                                           stderr=encoder_log, creationflags=flags, limit=65536)
+            if capture_owner:
+                capture_owner(capture.pid)
             capabilities = await asyncio.wait_for(hello(capture.stdout), 5)
             for field in ('width', 'height'):
                 bound = request.get('max'+field.title())
@@ -86,8 +88,8 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
                 bridge = await asyncio.create_subprocess_exec(str(bridge_path), '--width', str(capabilities['width']),
                     '--height', str(capabilities['height']), *(['--enable-text'] if text_enabled else []), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=input_log, creationflags=flags, limit=4096)
-                ready = json.loads(await asyncio.wait_for(bridge.stdout.readline(), 3))
-                if ready != dict(ready=True, width=capabilities['width'], height=capabilities['height']):
+                native_ready = json.loads(await asyncio.wait_for(bridge.stdout.readline(), 3))
+                if native_ready != dict(ready=True, width=capabilities['width'], height=capabilities['height']):
                     raise ValueError('Native input bridge unavailable')
                 bridge.stdin.transport.set_write_buffer_limits(high=24*8, low=24*2)
                 capabilities['input'] = dict(CAPABILITY)
@@ -98,7 +100,9 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
                 raise ValueError('Capability response exceeds bound')
             writer.write(b'SPC1'+struct.pack('!I', len(payload))+payload)
             await asyncio.wait_for(writer.drain(), 5)
-            print('Authenticated session; input='+('negotiated' if enabled else 'view-only'), flush=True)
+            report('Authenticated session; input='+('negotiated' if enabled else 'view-only'), flush=True)
+            if ready:
+                ready(capabilities)
 
             async def video():
                 next_report = time.perf_counter()+5
@@ -116,7 +120,7 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
                     sent = time.perf_counter()
                     stats.frame(pts, size, (sending-before)*1000, (sent-sending)*1000)
                     if sent >= next_report:
-                        print('transport_summary='+json.dumps(stats.report()), flush=True)
+                        report('transport_summary='+json.dumps(stats.report()), flush=True)
                         next_report = sent+5
 
             async def watch_view_only():
@@ -169,13 +173,13 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
             cleanup_failed = True
         if input_summary is not None:
             input_summary['nativeExit'] = bridge.returncode
-            print('input_summary='+json.dumps(input_summary), flush=True)
+            report('input_summary='+json.dumps(input_summary), flush=True)
         try:
             await close_child(capture)
         except RuntimeError:
             cleanup_failed = True
         if stats.frames:
-            print('transport_summary='+json.dumps(stats.report()), flush=True)
+            report('transport_summary='+json.dumps(stats.report()), flush=True)
         if cleanup_failed:
             raise RuntimeError('Session child cleanup did not finish')
 
