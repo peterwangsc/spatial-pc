@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import ssl
+import socket
 import struct
 import sys
 import tempfile
@@ -20,10 +21,11 @@ FIXTURE=Path(__file__).resolve().parents[1]/'.local'/'input_fixture.exe'
 
 @unittest.skipUnless(os.name=='nt' and FIXTURE.is_file(),'Build windows/host/test_input.cmd first on Windows')
 class ProductLifecycle(unittest.IsolatedAsyncioTestCase):
+    ADDRESS='127.0.0.1'
     async def asyncSetUp(self):
         self.temp=tempfile.TemporaryDirectory();self.identity=Identity(Path(self.temp.name)/'state')
         self.events=[];self.worker=Worker(self.identity,FIXTURE,FIXTURE,self.events.append,development=True,discovery=False)
-        self.worker.stream_port=free_port();self.worker.pair_port=free_port()
+        self.worker.stream_port=free_port(self.ADDRESS);self.worker.pair_port=free_port(self.ADDRESS)
         self.key=ec.generate_private_key(ec.SECP256R1());self.device=self.identity.enroll(self.key.public_key(),'Lifecycle fixture')
         root=Path(self.temp.name)
         (root/'client.pem').write_bytes(__import__('base64').b64decode(self.device['certificate']))
@@ -34,14 +36,14 @@ class ProductLifecycle(unittest.IsolatedAsyncioTestCase):
         self.context=ssl.create_default_context(cadata=self.identity.state['caCertificate'])
         self.context.minimum_version=self.context.maximum_version=ssl.TLSVersion.TLSv1_3
         self.context.set_alpn_protocols(['spatialpc/1']);self.context.load_cert_chain(root/'client.pem',root/'client-key.pem')
-        await self.worker.command(dict(command='network',address='127.0.0.1'))
+        await self.worker.command(dict(command='network',address=self.ADDRESS))
         await self.worker.command(dict(command='enable',value=True))
 
     async def asyncTearDown(self):
         await self.worker.stop();self.temp.cleanup()
 
     async def connect(self):
-        return await asyncio.open_connection('127.0.0.1',self.worker.stream_port,ssl=self.context,server_hostname=self.identity.state['serverName'])
+        return await asyncio.open_connection(self.ADDRESS,self.worker.stream_port,ssl=self.context,server_hostname=self.identity.state['serverName'])
 
     async def streaming(self):
         reader,writer=await self.connect()
@@ -90,3 +92,16 @@ class ProductLifecycle(unittest.IsolatedAsyncioTestCase):
         await self.worker.command(dict(command='shutdown'))
         await asyncio.wait_for(reader.read(),2);await self.close(writer);await self.assert_release()
         self.assertIsNone(self.worker.pair);self.assertFalse(self.worker.enabled)
+
+    async def test_network_selection_rejects_wildcard_remote_and_invalid_scopes(self):
+        await self.worker.stop()
+        for address in ('0.0.0.0','::','ff02::fb','::ffff:127.0.0.1','fe80::1',
+                        'fe80::1%invalid','fe80::1%4294967296','2001:db8::1','192.0.2.1'):
+            with self.subTest(address=address),self.assertRaises(ValueError):
+                await self.worker.command(dict(command='network',address=address))
+        self.assertEqual(self.worker.address,self.ADDRESS)
+
+
+@unittest.skipUnless(os.name=='nt' and socket.has_ipv6 and FIXTURE.is_file(),'Windows IPv6 native fixture required')
+class ProductIPv6Lifecycle(ProductLifecycle):
+    ADDRESS='::1'

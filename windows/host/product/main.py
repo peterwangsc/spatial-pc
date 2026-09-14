@@ -8,11 +8,12 @@ from pathlib import Path
 import queue
 import sys
 import threading
-import ifaddr
+import time
 from .identity import Identity
 from .pairing_server import PairingServer
 from .stream_server import StreamServer
 from .discovery import Discovery
+from .network import local_addresses,normalize
 
 
 class Worker:
@@ -105,8 +106,8 @@ class Worker:
             if self.enabled:raise ValueError('Disable access before changing networks.')
             address=value['address']
             if not isinstance(address,str):raise ValueError('Invalid network address')
-            ip=ipaddress.IPv4Address(address)
-            local={entry.ip for adapter in ifaddr.get_adapters() for entry in adapter.ips if isinstance(entry.ip,str)}
+            address=normalize(address);ip=ipaddress.ip_address(address)
+            local=local_addresses()
             if address not in local or ip.is_unspecified or ip.is_multicast or (ip.is_loopback and not self.development):
                 raise ValueError('Choose an address on this PC.')
             self.identity.configure(bindAddress=address);self.address=address;self.status()
@@ -120,7 +121,8 @@ class Worker:
                 await self.start_task(self.pair_task,self.pair.ready)
                 if self.discovery:await self.discovery.pairing(True)
                 code=self.pair.window.code()
-                self.notify(dict(event='pairingCode',code='-'.join(code[i:i+4] for i in range(0,len(code),4)),expiresSeconds=180))
+                self.notify(dict(event='pairingCode',code='-'.join(code[i:i+4] for i in range(0,len(code),4)),
+                    expiresSeconds=max(0,int(self.pair.window.expires-time.monotonic()))))
             except BaseException:
                 await self.stop_pairing();raise
         elif command=='cancelPairing':await self.stop_pairing()
@@ -144,7 +146,7 @@ class Worker:
             self.notify(dict(event='error',message='Desktop sharing stopped. Check the display and network, then enable access again.'))
         if self.pair_task and self.pair_task.done():
             await self.stop_pairing()
-        if self.enabled and self.address not in {e.ip for a in ifaddr.get_adapters() for e in a.ips if isinstance(e.ip,str)}:
+        if self.enabled and self.address not in local_addresses():
             await self.stop();self.address=None
             self.notify(dict(event='error',message='The network changed. Select a Private network and enable access again.'))
 

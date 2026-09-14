@@ -24,6 +24,19 @@ runtime on TCP47990/47991 and UDP5353, Private profile, LocalSubnet, with no edg
 traversal. It does not change your network category or enable/disable Windows
 Firewall. Enterprise firewall policy can still prohibit connections.
 
+Network selection supports assigned IPv4 or IPv6 addresses, including scoped
+IPv6 link-local addresses. TCP binds only the selected address and family;
+Bonjour advertises its A or AAAA record with distinct pairing and stream ports.
+Local TLS/pairing/revocation tests pass on both loopback families, and discovery
+resolved the selected Windows interface's IPv6 AAAA record. These checks do not
+replace physical Vision Pro acceptance on an IPv6-only network.
+
+Discovery shutdown explicitly aborts its own datagram transports after goodbye
+messages. This handles an outstanding-write close issue in the pinned Windows
+Python3.14.7 Proactor runtime. The adapter uses zeroconf0.151.3 engine transport
+handles and must be rechecked when that dependency changes; tests assert every
+owned discovery socket is closed, rather than relying on an arbitrary delay.
+
 Choose **Enable access**, then **Pair a new device**. Enter the displayed one-time
 code on Vision Pro and approve the named request on this PC. The code expires
 after three minutes and at most five failed attempts; local approval cannot

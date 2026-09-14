@@ -2,13 +2,16 @@
 import asyncio
 import os
 import socket
+from .network import socket_address
 
 
 async def listen(address, port, context, session, stopped, ready=None, handshake_failed=None):
     loop=asyncio.get_running_loop()
-    with socket.socket() as listener:
+    family,endpoint=socket_address(address,port)
+    with socket.socket(family) as listener:
         listener.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE if os.name=='nt' else socket.SO_REUSEADDR,1)
-        listener.bind((address,port));listener.listen(2);listener.setblocking(False)
+        if family==socket.AF_INET6:listener.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
+        listener.bind(endpoint);listener.listen(2);listener.setblocking(False)
         if ready:
             ready.set()
         while not stopped.is_set():

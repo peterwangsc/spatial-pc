@@ -17,16 +17,18 @@ from cryptography.hazmat.primitives import hashes,serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 
-def free_port():
-    with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
+def free_port(address='127.0.0.1'):
+    with socket.socket(socket.AF_INET6 if ':' in address else socket.AF_INET) as s:
+        s.bind((address,0));return s.getsockname()[1]
 
 
 @unittest.skipUnless(os.name=='nt','Windows protected identity integration')
 class PairingIntegration(unittest.IsolatedAsyncioTestCase):
+    ADDRESS='127.0.0.1'
     async def asyncSetUp(self):
         self.temp=tempfile.TemporaryDirectory();self.identity=Identity(Path(self.temp.name)/'identity')
-        self.events=[];self.port=free_port()
-        self.server=PairingServer(self.identity,'127.0.0.1',self.port,47993,self.events.append)
+        self.events=[];self.port=free_port(self.ADDRESS)
+        self.server=PairingServer(self.identity,self.ADDRESS,self.port,47993,self.events.append)
         self.code=decode_code(self.server.window.code());self.task=asyncio.create_task(self.server.run())
         await asyncio.wait_for(self.server.ready.wait(),3)
 
@@ -36,7 +38,7 @@ class PairingIntegration(unittest.IsolatedAsyncioTestCase):
     async def client(self,wrong_hash=False):
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT);context.check_hostname=False;context.verify_mode=ssl.CERT_NONE
         context.minimum_version=context.maximum_version=ssl.TLSVersion.TLSv1_3;context.set_alpn_protocols(['spatialpc-pair/1'])
-        reader,writer=await asyncio.open_connection('127.0.0.1',self.port,ssl=context,server_hostname=self.identity.state['serverName'])
+        reader,writer=await asyncio.open_connection(self.ADDRESS,self.port,ssl=context,server_hostname=self.identity.state['serverName'])
         tls=writer.get_extra_info('ssl_object');leaf=tls.getpeercert(binary_form=True)
         challenge=await read_record(reader)
         key=ec.generate_private_key(ec.SECP256R1());point=key.public_key().public_bytes(serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
@@ -94,6 +96,8 @@ class PairingIntegration(unittest.IsolatedAsyncioTestCase):
         await self.close(writer);await asyncio.wait_for(self.task,3)
         self.server.approve(request_id,True)
         self.assertEqual(self.identity.state['devices'],[])
+
+
         self.assertFalse(self.server.window.can_commit(request_id))
 
     async def test_expired_commit_and_explicit_denial_issue_no_certificate(self):
@@ -104,3 +108,8 @@ class PairingIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await asyncio.wait_for(reader.read(),2),b'')
         await self.close(writer)
         self.assertEqual(self.identity.state['devices'],[])
+
+
+@unittest.skipUnless(os.name=='nt' and socket.has_ipv6,'Windows IPv6 protected identity integration')
+class PairingIPv6Integration(PairingIntegration):
+    ADDRESS='::1'

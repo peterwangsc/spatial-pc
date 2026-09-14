@@ -30,7 +30,8 @@ internal static class NetworkPolicy {
         foreach(var adapter in NetworkInterface.GetAllNetworkInterfaces())
             if(adapter.OperationalStatus==OperationalStatus.Up&&adapters.Contains(adapter.Id.Trim('{','}')))
                 foreach(var address in adapter.GetIPProperties().UnicastAddresses)
-                    if(address.Address.AddressFamily==AddressFamily.InterNetwork)
+                    if((address.Address.AddressFamily==AddressFamily.InterNetwork||address.Address.AddressFamily==AddressFamily.InterNetworkV6)
+                        &&address.DuplicateAddressDetectionState==DuplicateAddressDetectionState.Preferred)
                         result[adapter.Name+" · "+address.Address]=address.Address.ToString();
         return result;
     }
