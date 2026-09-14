@@ -21,12 +21,15 @@ final class H264Decoder: @unchecked Sendable {
     private var configuredPPS: Data?
     private let width: Int
     private let height: Int
+    private let outputFormat: OSType
     private(set) var hardware = false
     private var needsIDR = true
     private(set) var lastDecodeMS = 0.0
 
     enum Failure: Error { case osStatus(OSStatus), dimensions, noHardware }
-    init(width: Int, height: Int) { self.width = width; self.height = height }
+    init(width: Int, height: Int, outputFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
+        self.width = width; self.height = height; self.outputFormat = outputFormat
+    }
     deinit { if let session { VTDecompressionSessionInvalidate(session) } }
     private func check(_ status: OSStatus) throws {
         guard status == noErr else { throw Failure.osStatus(status) }
@@ -51,7 +54,7 @@ final class H264Decoder: @unchecked Sendable {
         #else
         let specification: [String: Any] = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder as String: true]
         #endif
-        let attributes: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        let attributes: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: outputFormat,
             kCVPixelBufferMetalCompatibilityKey as String: true, kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
         try check(VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format,
             decoderSpecification: specification as CFDictionary, imageBufferAttributes: attributes as CFDictionary,

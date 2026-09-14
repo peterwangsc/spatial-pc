@@ -28,6 +28,7 @@ final class SyntheticRenderer: NSObject {
     @ObservationIgnored private var videoCache: CVMetalTextureCache?
     @ObservationIgnored private var texture: LowLevelTexture?
     @ObservationIgnored private var queue: MTLCommandQueue?
+    @ObservationIgnored private var videoPipeline: MTLComputePipelineState?
     @ObservationIgnored private var pipeline: MTLComputePipelineState?
     @ObservationIgnored private var displayLink: CADisplayLink?
     @ObservationIgnored private var inFlight = false
@@ -65,6 +66,8 @@ final class SyntheticRenderer: NSObject {
             renderGeneration = UUID(); inFlight = false; latestVideo = nil
             self.queue = queue
             pipeline = try await device.makeComputePipelineState(function: kernel)
+            guard let videoKernel = device.makeDefaultLibrary()?.makeFunction(name:"videoToBGRA") else { throw RenderError.unavailable }
+            videoPipeline = try await device.makeComputePipelineState(function:videoKernel)
             dimensions = SIMD2(width,height)
             let texture = try LowLevelTexture(descriptor: .init(pixelFormat: .bgra8Unorm,
                 width: width, height: height, textureUsage: [.shaderRead,.shaderWrite]))
@@ -84,17 +87,17 @@ final class SyntheticRenderer: NSObject {
     }
 
     // Use the producer queue so presentation reads follow texture writes on the GPU.
-    func makeWindowFrame() -> (command: MTLCommandBuffer, texture: MTLTexture)? {
+    func makeWindowFrame() -> (command: MTLCommandBuffer, texture: MTLTexture, chroma: MTLTexture?, conversion: VideoColorConversion)? {
         guard let command = queue?.makeCommandBuffer() else { return nil }
         if videoMode {
             guard let frame = latestVideo else { return nil }
             // Reading the decoder's IOSurface directly removes a full-frame intermediate blit.
             // Keep BOTH Core Video objects alive until the GPU finishes, even after reconnect.
             command.addCompletedHandler { [frame] _ in withExtendedLifetime(frame) {} }
-            return (command,frame.texture)
+            return (command,frame.texture,frame.chroma,frame.conversion)
         }
         guard let texture else { return nil }
-        return (command,texture.read())
+        return (command,texture.read(),nil,VideoColorConversion())
     }
     func reportWindowError(_ message:String) { error = message }
 
@@ -128,9 +131,11 @@ final class SyntheticRenderer: NSObject {
     }
 
     private struct RetainedFrame: @unchecked Sendable {
-        let mapped: CVMetalTexture
+        let mapped: [CVMetalTexture]
         let pixel: CVPixelBuffer
         let texture: MTLTexture
+        let chroma: MTLTexture?
+        let conversion: VideoColorConversion
         let revision: UInt64
     }
 
@@ -142,14 +147,26 @@ final class SyntheticRenderer: NSObject {
     func presentVideo(_ pixel: CVPixelBuffer) {
         guard videoMode, CVPixelBufferGetWidth(pixel) == dimensions.x,
               CVPixelBufferGetHeight(pixel) == dimensions.y, let videoCache else { return }
-        var mapped: CVMetalTexture?
-        let result = CVMetalTextureCacheCreateTextureFromImage(nil,videoCache,pixel,nil,.bgra8Unorm,
-            dimensions.x,dimensions.y,0,&mapped)
-        guard result == kCVReturnSuccess, let mapped, let source = CVMetalTextureGetTexture(mapped) else {
-            error = "Could not map decoded frame to Metal"; return
+        var mapped: [CVMetalTexture] = []
+        func map(_ plane: Int, _ format: MTLPixelFormat, _ width: Int, _ height: Int) -> MTLTexture? {
+            var reference: CVMetalTexture?
+            let result = CVMetalTextureCacheCreateTextureFromImage(nil,videoCache,pixel,nil,format,width,height,plane,&reference)
+            guard result == kCVReturnSuccess, let reference, let texture = CVMetalTextureGetTexture(reference) else { return nil }
+            mapped.append(reference); return texture
         }
+        let conversion = VideoColorConversion(pixel:pixel)
+        let source: MTLTexture?, chroma: MTLTexture?
+        if conversion.options.x != 0 {
+            guard CVPixelBufferGetPlaneCount(pixel) == 2 else { error = "Invalid video planes"; return }
+            source = map(0,.r8Unorm,CVPixelBufferGetWidthOfPlane(pixel,0),CVPixelBufferGetHeightOfPlane(pixel,0))
+            chroma = map(1,.rg8Unorm,CVPixelBufferGetWidthOfPlane(pixel,1),CVPixelBufferGetHeightOfPlane(pixel,1))
+            guard chroma != nil else { error = "Could not map video chroma"; return }
+        } else {
+            source = map(0,.bgra8Unorm,dimensions.x,dimensions.y); chroma = nil
+        }
+        guard let source else { error = "Could not map decoded frame to Metal"; return }
         windowRevision &+= 1
-        let frame = RetainedFrame(mapped:mapped,pixel:pixel,texture:source,revision:windowRevision)
+        let frame = RetainedFrame(mapped:mapped,pixel:pixel,texture:source,chroma:chroma,conversion:conversion,revision:windowRevision)
         // A single replaceable decoded frame, not an unbounded presentation queue.
         latestVideo = frame
         if spatialVideoActive { copyToSpatialTexture(frame) }
@@ -157,11 +174,23 @@ final class SyntheticRenderer: NSObject {
 
     private func copyToSpatialTexture(_ frame: RetainedFrame) {
         guard !inFlight else { droppedTicks += 1; return }
-        guard let texture, let command = queue?.makeCommandBuffer(),
-              let blit = command.makeBlitCommandEncoder() else { return }
+        guard let texture, let command = queue?.makeCommandBuffer() else { return }
         let begin = CACurrentMediaTime(), generation = renderGeneration
+        if let chroma = frame.chroma {
+            guard let videoPipeline, let encoder = command.makeComputeCommandEncoder() else { return }
+            var conversion = frame.conversion
+            encoder.setComputePipelineState(videoPipeline)
+            encoder.setTexture(frame.texture,index:0); encoder.setTexture(chroma,index:1)
+            encoder.setTexture(texture.replace(using:command),index:2)
+            encoder.setBytes(&conversion,length:MemoryLayout<VideoColorConversion>.stride,index:0)
+            let w = videoPipeline.threadExecutionWidth, h = max(1,videoPipeline.maxTotalThreadsPerThreadgroup/w)
+            encoder.dispatchThreads(MTLSize(width:dimensions.x,height:dimensions.y,depth:1),threadsPerThreadgroup:MTLSize(width:w,height:h,depth:1))
+            encoder.endEncoding()
+        } else {
+            guard let blit = command.makeBlitCommandEncoder() else { return }
+            blit.copy(from:frame.texture,to:texture.replace(using:command)); blit.endEncoding()
+        }
         inFlight = true
-        blit.copy(from:frame.texture,to:texture.replace(using:command)); blit.endEncoding()
         let cpuMS = (CACurrentMediaTime()-begin)*1000
         command.addCompletedHandler { [weak self, frame] command in
             withExtendedLifetime(frame) {}
