@@ -35,3 +35,7 @@ Build 8 also releases the native text responder and dismisses its keyboard when 
 Peter confirmed that build 8 receives MacBook keyboard letters and that the floating keyboard works, including spaces. Physical Space instead highlighted and then activated the local Back button; the apparent connection crash was navigation. Build 9 removes the three desktop overlay buttons from keyboard focus with `focusable(false)`, retaining button actions and accessibility labels. This targets local keyboard navigation consuming remote typing.
 
 The loopback simulator did not reproduce the old build's Space interception: two physical Space presses produced four balanced HID records in both builds. In build 9, clicking the keyboard button still requested the native keyboard, and clicking Back still disconnected. Optimized simulator and signed device builds passed. The actual headset must establish whether this focused change resolves Space routing; it is not yet marked fixed on hardware.
+
+### User confirmation received September 14
+
+The PC thread relayed Peter's report that the current headset experience “works,” following the morning keyboard handoff. Record this as user-confirmed overall success. Build 9 (client source `2eff5f9`) is the latest installed build; the confirmation did not separately identify the build or enumerate physical keyboard, floating keyboard or Space checks. It therefore does not establish a detailed per-input regression matrix. No host restart, workload, release or upload followed this confirmation.
