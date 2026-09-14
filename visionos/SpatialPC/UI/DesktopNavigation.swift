@@ -8,6 +8,7 @@ struct DesktopNavigationButton: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openImmersiveSpace) private var openSpace
+    @Environment(\.dismissImmersiveSpace) private var closeSpace
     private var label: String { action == .back ? "Back to My Devices" : model.isImmersed ? "Return to Window" : "Enter Focus Mode" }
     private var symbol: String { action == .back ? "chevron.left" : model.isImmersed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right" }
     var body: some View {
@@ -39,12 +40,12 @@ struct DesktopNavigationButton: View {
                 openWindow(id:"controls")
             } else if model.isImmersed {
                 model.destination = .desktop
-                openWindow(id:"pc-desktop",value:"primary")
+                await closeSpace()
+                model.transitionPending = false
             } else {
                 model.destination = .focus
                 switch await openSpace(id:"workspace") {
                 case .opened:
-                    dismissWindow(id:"pc-desktop",value:"primary")
                     dismissWindow(id:"controls")
                 case .error:
                     model.destination = .desktop
