@@ -1,0 +1,158 @@
+import Foundation
+import Network
+import Security
+import CryptoKit
+import Observation
+import CoreVideo
+
+#if DEBUG
+@MainActor @Observable
+final class LabStreamClient {
+    private(set) var status = "Encrypted lab connection is not provisioned." { didSet { if oldValue != status { saveDiagnostics() } } }
+    private(set) var userMessage: String?
+    private(set) var available = false
+    private(set) var connected = false
+    private(set) var active = false
+    private(set) var receivedFrames = 0
+    private(set) var decodeMS = 0.0
+    private(set) var hardwareDecoder = false
+    @ObservationIgnored private var connection: NWConnection?
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private let queue = DispatchQueue(label:"SpatialPC.secure-stream",qos:.userInteractive)
+    @ObservationIgnored private let decoderQueue = DispatchQueue(label:"SpatialPC.decode",qos:.userInteractive)
+    @ObservationIgnored private let renderer: SyntheticRenderer
+
+    enum Failure: Error { case unpaired, ended, trust, protocolMismatch }
+    init(renderer: SyntheticRenderer) {
+        self.renderer = renderer
+        refreshPairing()
+    }
+    private func saveDiagnostics() {
+        let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
+        let values: [String:Any] = ["status":status,"frames":receivedFrames,"decodeMS":decodeMS,"hardwareDecoder":hardwareDecoder]
+        if let data = try? JSONSerialization.data(withJSONObject:values) {
+            try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
+        }
+    }
+    func refreshPairing() {
+        do {
+            available = try LabPairing.load() != nil
+            status = available ? "Lab pair installed · ready for encrypted streaming" : "Encrypted lab connection is not provisioned."
+        } catch { available = false; status = "Lab enrollment could not be loaded: \(error)"; userMessage = "Your saved pairing could not be loaded. Set up this PC again." }
+    }
+    func disconnect() {
+        generation = UUID(); connection?.cancel(); connection = nil; connected = false; active = false
+        renderer.endVideo(); status = "Disconnected"; userMessage = nil
+    }
+    func connect() {
+        guard connection == nil else { return }
+        userMessage = nil
+        do {
+            guard let pair = try LabPairing.load(), let port = NWEndpoint.Port(rawValue:pair.port),
+                  let root = SecCertificateCreateWithData(nil,pair.rootDER as CFData) else { throw Failure.unpaired }
+            let tls = NWProtocolTLS.Options()
+            let options = tls.securityProtocolOptions
+            sec_protocol_options_set_min_tls_protocol_version(options,.TLSv13)
+            sec_protocol_options_set_local_identity(options,try pair.identity())
+            sec_protocol_options_set_tls_server_name(options,pair.serverName)
+            sec_protocol_options_add_tls_application_protocol(options,"spatialpc/1")
+            sec_protocol_options_set_verify_block(options, { _, wrappedTrust, complete in
+                let trust = sec_trust_copy_ref(wrappedTrust).takeRetainedValue()
+                guard SecTrustSetAnchorCertificates(trust,[root] as CFArray) == errSecSuccess,
+                      SecTrustSetAnchorCertificatesOnly(trust,true) == errSecSuccess,
+                      SecTrustSetPolicies(trust,SecPolicyCreateSSL(true,pair.serverName as CFString)) == errSecSuccess,
+                      SecTrustEvaluateWithError(trust,nil),
+                      let leaf = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first else {
+                    complete(false); return
+                }
+                let digest = SHA256.hash(data:SecCertificateCopyData(leaf) as Data).map { String(format:"%02x",$0) }.joined()
+                complete(digest == pair.serverSHA256)
+            },queue)
+            let parameters = NWParameters(tls:tls,tcp:NWProtocolTCP.Options())
+            let connection = NWConnection(host:NWEndpoint.Host(pair.host),port:port,using:parameters)
+            self.connection = connection; active = true; let sessionID = UUID(); generation = sessionID
+            status = "Authenticating paired PC…"; receivedFrames = 0
+            connection.stateUpdateHandler = { [weak self] state in
+                Task { @MainActor in
+                    guard let self, self.generation == sessionID else { return }
+                    switch state {
+                    case .ready:
+                        self.connected = true; self.userMessage = nil; self.status = "Encrypted session · waiting for desktop"
+                        Task { await self.receiveStream(connection,sessionID:sessionID) }
+                    case .failed(let error):
+                        self.disconnect(); self.status = "Connection failed: \(error)"
+                        if case .tls = error { self.userMessage = "This PC could not be verified. Check its pairing." }
+                        else { self.userMessage = "Could not reach your PC. Check that the host is running on the same network, then try again." }
+                    case .waiting(let error):
+                        if case .tls = error {
+                            self.disconnect(); self.status = "Connection failed: certificate authentication was rejected."
+                            self.userMessage = "This PC could not be verified. Check its pairing."
+                        } else { self.status = "Waiting for the paired PC: \(error)"; self.userMessage = "Waiting for your PC. Check the host and your local network, or cancel to try again." }
+                    default: break
+                    }
+                }
+            }
+            connection.start(queue:queue)
+        } catch { status = "Could not authenticate the lab pair: \(error)"; connection?.cancel(); connection = nil; active = false; userMessage = "Could not use this saved pairing. Set up the PC again." }
+    }
+    private func send(_ data: Data, on connection: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
+            connection.send(content:data,completion:.contentProcessed { error in
+                if let error { continuation.resume(throwing:error) } else { continuation.resume() }
+            })
+        }
+    }
+    private func receive(_ size: Int, on connection: NWConnection) async throws -> Data {
+        var result = Data()
+        while result.count < size {
+            let remaining = size-result.count
+            let part: Data = try await withCheckedThrowingContinuation { continuation in
+                connection.receive(minimumIncompleteLength:1,maximumLength:remaining) { data, _, _, error in
+                    if let error { continuation.resume(throwing:error) }
+                    else if let data, !data.isEmpty { continuation.resume(returning:data) }
+                    else { continuation.resume(throwing:Failure.ended) }
+                }
+            }
+            result.append(part)
+        }
+        return result
+    }
+    private func receiveStream(_ connection: NWConnection, sessionID: UUID) async {
+        do {
+            let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192}".utf8)
+            var hello = Data("SPC1".utf8); var length = UInt32(payload.count).bigEndian
+            withUnsafeBytes(of:&length) { hello.append(contentsOf:$0) }; hello.append(payload)
+            try await send(hello,on:connection)
+            let count = try StreamWire.helloLength(await receive(8,on:connection))
+            let capabilities = try StreamWire.capabilities(await receive(count,on:connection))
+            guard generation == sessionID else { return }
+            let decoder = H264Decoder(width:capabilities.width,height:capabilities.height)
+            await renderer.prepareVideo(width:capabilities.width,height:capabilities.height)
+            guard generation == sessionID else {
+                if self.connection == nil { renderer.endVideo() }
+                return
+            }
+            while generation == sessionID {
+                let header = try StreamWire.frameHeader(await receive(16,on:connection))
+                let data = try await receive(header.length,on:connection)
+                let frame: H264Decoder.Frame? = try await withCheckedThrowingContinuation { continuation in
+                    decoderQueue.async {
+                        do { continuation.resume(returning:try decoder.decode(data,timestamp:header.timestamp)) }
+                        catch { continuation.resume(throwing:error) }
+                    }
+                }
+                guard generation == sessionID else { return }
+                if let frame {
+                    renderer.presentVideo(frame.pixel)
+                    receivedFrames += 1; decodeMS = frame.decodeMS; hardwareDecoder = frame.hardware
+                    if receivedFrames % 60 == 0 { saveDiagnostics() }
+                    status = "Live PC · encrypted · " + (hardwareDecoder ? "hardware decode" : "simulator decode")
+                }
+            }
+        } catch {
+            guard generation == sessionID else { return }
+            disconnect(); status = "Stream ended: \(error)"; userMessage = "The desktop connection ended. Check your PC, then reconnect."
+        }
+    }
+}
+#endif
