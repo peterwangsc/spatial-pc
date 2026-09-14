@@ -11,12 +11,19 @@ struct PCDesktopWindow: View {
     private var aspect: CGFloat { CGFloat(model.renderer.dimensions.x) / CGFloat(model.renderer.dimensions.y) }
 
     var body: some View {
-        DesktopMetalSurface(renderer:model.renderer,aspect:aspect)
+        DesktopMetalSurface(model:model,aspect:aspect,keyboardRequest:model.keyboardRequest)
             .frame(minWidth:480,minHeight:480/aspect)
             .ignoresSafeArea()
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
             .overlay(alignment:.topLeading) { DesktopNavigationButton(model:model,action:.back).padding(12) }
-            .overlay(alignment:.topTrailing) { DesktopNavigationButton(model:model,action:.focus).padding(12) }
+            .overlay(alignment:.topTrailing) {
+                HStack(spacing:8) {
+                    #if DEBUG
+                    if model.stream.textAvailable { DesktopKeyboardButton(model:model) }
+                    #endif
+                    DesktopNavigationButton(model:model,action:.focus)
+                }.padding(12)
+            }
             .task {
                 // A restored desktop has no surviving network session after a cold launch.
                 if !model.startupHandled { openWindow(id:"controls") }
@@ -24,12 +31,18 @@ struct PCDesktopWindow: View {
             }
             .onDisappear {
                 // Closing the desktop must not leave an empty immersive environment.
+                #if DEBUG
+                model.stream.stopControl()
+                #endif
                 guard model.destination == .focus else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
                 }
             }
             .onChange(of:scenePhase,initial:true) { _, phase in
+                #if DEBUG
+                if phase != .active { model.stream.stopControl() }
+                #endif
                 guard phase == .active, model.destination == .desktop else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
@@ -41,14 +54,20 @@ struct PCDesktopWindow: View {
 }
 
 private struct DesktopMetalSurface: UIViewRepresentable {
-    let renderer: SyntheticRenderer
+    let model: AppModel
     let aspect: CGFloat
-    func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(renderer:renderer,aspect:aspect) }
-    func updateUIView(_ view:DesktopMetalView,context:Context) { view.setAspect(aspect) }
+    let keyboardRequest: Int
+    func makeUIView(context:Context) -> DesktopMetalView { DesktopMetalView(model:model,aspect:aspect) }
+    func updateUIView(_ view:DesktopMetalView,context:Context) {
+        view.setAspect(aspect)
+        #if DEBUG
+        view.updateKeyboardRequest(keyboardRequest)
+        #endif
+    }
     static func dismantleUIView(_ view:DesktopMetalView,coordinator:()) { view.isPaused = true; view.delegate = nil }
 }
 
-@MainActor private final class DesktopMetalView: MTKView, MTKViewDelegate {
+@MainActor private final class DesktopMetalView: MTKView, MTKViewDelegate, UIPointerInteractionDelegate {
     private let renderer: SyntheticRenderer
     private var pipeline: MTLRenderPipelineState?
     private var aspect: CGFloat
@@ -56,14 +75,25 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     private var submittedFrame: UInt64?
     private var submittedSize = CGSize.zero
     private var inFlight = false
+    #if DEBUG
+    private var input: DesktopInputController?
+    private var keyboardRequest = 0
+    private var showsSystemKeyboard = false
+    private let suppressedKeyboard = UIView(frame:.zero)
+    #endif
 
-    init(renderer:SyntheticRenderer,aspect:CGFloat) {
-        self.renderer = renderer; self.aspect = aspect
+    init(model:AppModel,aspect:CGFloat) {
+        self.renderer = model.renderer; self.aspect = aspect
         super.init(frame:.zero,device:MTLCreateSystemDefaultDevice())
         colorPixelFormat = .bgra8Unorm
         clearColor = MTLClearColorMake(0,0,0,1)
         isOpaque = true; preferredFramesPerSecond = 60
         autoResizeDrawable = true; delegate = self
+        isUserInteractionEnabled = true
+        addInteraction(UIPointerInteraction(delegate:self))
+        #if DEBUG
+        input = DesktopInputController(view:self,stream:model.stream)
+        #endif
         do {
             guard let device, let library = device.makeDefaultLibrary() else { return }
             let descriptor = MTLRenderPipelineDescriptor()
@@ -77,8 +107,89 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         appliedAspect = nil
-        if window != nil { isPaused = false; applyGeometry() } else { isPaused = true }
+        if window != nil { isPaused = false; applyGeometry() } else {
+            isPaused = true
+            #if DEBUG
+            input?.stop()
+            #endif
+        }
     }
+    #if DEBUG
+    override var canBecomeFirstResponder: Bool { input?.available == true }
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        input?.keyboardFocusChanged(isFirstResponder); return accepted
+    }
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { input?.stop() }
+        input?.keyboardFocusChanged(isFirstResponder); return accepted
+    }
+    override var inputView: UIView? { showsSystemKeyboard ? nil : suppressedKeyboard }
+    func updateKeyboardRequest(_ request:Int) {
+        guard input?.available == true else {
+            keyboardRequest = request
+            if showsSystemKeyboard || isFirstResponder {
+                showsSystemKeyboard = false
+                input?.keyboardPresentationChanged(false)
+                _ = resignFirstResponder()
+            }
+            return
+        }
+        guard keyboardRequest != request else { return }
+        keyboardRequest = request
+        guard input?.textAvailable == true else { return }
+        showsSystemKeyboard.toggle()
+        input?.keyboardPresentationChanged(showsSystemKeyboard)
+        guard input?.activateKeyboard() == true else { return }
+        reloadInputViews()
+    }
+    // UIKit reserves Tab/Space for local focus navigation ahead of raw presses.
+    // Claim only those commands, and only while this remote surface owns input.
+    private lazy var desktopKeyCommands: [UIKeyCommand] = {
+        [" ", "\t"].flatMap { character in
+            [UIKeyModifierFlags(), .shift].map { modifiers in
+                let command = UIKeyCommand(input:character,modifierFlags:modifiers,
+                                           action:#selector(forwardNavigationKey(_:)))
+                command.wantsPriorityOverSystemBehavior = true
+                command.allowsAutomaticLocalization = false
+                return command
+            }
+        }
+    }()
+    override var keyCommands: [UIKeyCommand]? {
+        input?.available == true && isFirstResponder ? desktopKeyCommands : nil
+    }
+    @objc private func forwardNavigationKey(_ command:UIKeyCommand) {
+        input?.navigationKeyCommand(command)
+    }
+    override func canPerformAction(_ action:Selector,withSender sender:Any?) -> Bool {
+        action == #selector(forwardNavigationKey(_:)) && input?.available == true && isFirstResponder
+    }
+    override func touchesBegan(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.began) }
+    override func touchesMoved(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.moved) }
+    override func touchesEnded(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.ended) }
+    override func touchesCancelled(_ touches:Set<UITouch>,with event:UIEvent?) { input?.stop() }
+    private func commandPresses(in presses:Set<UIPress>) -> Set<UIPress> {
+        Set(presses.filter { press in
+            guard let key = press.key, key.keyCode == .keyboardSpacebar || key.keyCode == .keyboardTab else { return false }
+            return key.modifierFlags.intersection([.control,.alternate,.command]).isEmpty
+        })
+    }
+    override func pressesBegan(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
+        let commands = commandPresses(in:presses), physical = presses.subtracting(commands)
+        if !physical.isEmpty, input?.presses(physical,down:true) != true { super.pressesBegan(physical,with:event) }
+        // Allow UIKit to dispatch the priority commands instead of consuming
+        // their raw presses and potentially forwarding the same key twice.
+        if !commands.isEmpty { super.pressesBegan(commands,with:event) }
+    }
+    override func pressesEnded(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
+        let commands = commandPresses(in:presses), physical = presses.subtracting(commands)
+        if !physical.isEmpty, input?.presses(physical,down:false) != true { super.pressesEnded(physical,with:event) }
+        if !commands.isEmpty { super.pressesEnded(commands,with:event) }
+    }
+    override func pressesCancelled(_ presses:Set<UIPress>,with event:UIPressesEvent?) { input?.stop() }
+    #endif
     func setAspect(_ value:CGFloat) {
         guard value.isFinite, value > 0 else { return }
         aspect = value; applyGeometry()
@@ -91,6 +202,14 @@ private struct DesktopMetalSurface: UIViewRepresentable {
             minimumSize:CGSize(width:480,height:480/aspect),resizingRestrictions:.uniform)) { [weak self] error in
                 Task { @MainActor in self?.renderer.reportWindowError("Could not match the desktop window size: \(error)") }
             }
+    }
+    func pointerInteraction(_ interaction:UIPointerInteraction, regionFor request:UIPointerRegionRequest,
+                            defaultRegion:UIPointerRegion) -> UIPointerRegion? {
+        // The decoded image is a pointer surface, not just its overlaid buttons.
+        UIPointerRegion(rect:bounds,identifier:"desktop" as NSString)
+    }
+    func pointerInteraction(_ interaction:UIPointerInteraction, styleFor region:UIPointerRegion) -> UIPointerStyle? {
+        .system()
     }
     func mtkView(_ view:MTKView,drawableSizeWillChange size:CGSize) { submittedFrame = nil }
     func draw(in view:MTKView) {
@@ -123,3 +242,17 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         frame.command.commit()
     }
 }
+
+#if DEBUG
+extension DesktopMetalView: UIKeyInput {
+    var hasText: Bool { true } // Remote selection is unknown; always permit Delete.
+    var autocorrectionType: UITextAutocorrectionType { get { .no } set {} }
+    var autocapitalizationType: UITextAutocapitalizationType { get { .none } set {} }
+    var spellCheckingType: UITextSpellCheckingType { get { .no } set {} }
+    var smartQuotesType: UITextSmartQuotesType { get { .no } set {} }
+    var smartDashesType: UITextSmartDashesType { get { .no } set {} }
+    var smartInsertDeleteType: UITextSmartInsertDeleteType { get { .no } set {} }
+    func insertText(_ text:String) { input?.insertText(text) }
+    func deleteBackward() { input?.deleteBackward() }
+}
+#endif

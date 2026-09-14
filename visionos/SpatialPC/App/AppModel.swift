@@ -11,7 +11,11 @@ final class AppModel {
     enum Destination { case devices, desktop, focus }
     var destination = Destination.devices
     var error: String?
+    var keyboardRequest = 0
     func handleScenePhase(_ phase: ScenePhase) {
+        #if DEBUG
+        if phase != .active { stream.stopControl() }
+        #endif
         if phase == .background && !transitionPending {
             #if DEBUG
             stream.disconnect()
