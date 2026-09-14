@@ -101,7 +101,12 @@ internal sealed class HostWindow : Form {
         layout.Controls.Add(footer);
         tray.Icon=Icon;tray.Text="Spatial PC — access disabled";tray.Visible=true;tray.DoubleClick+=(s,e)=>Reveal();
         var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>Send("enable","value",false));menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
-        Shown+=(s,e)=>{LoadNetworks();StartWorker();if(background)Hide();};
+        Shown+=(s,e)=>{
+            LoadNetworks();
+            if(development||FirewallPolicy.Configured())StartWorker();
+            else{state.Text="Set up your connection";details.Text="Choose Set up network to allow Spatial PC on your Private local network. Access will stay disabled.";}
+            if(background)Hide();
+        };
         FormClosing+=async(s,e)=>{if(quitting)return;e.Cancel=true;if(e.CloseReason==CloseReason.WindowsShutDown||e.CloseReason==CloseReason.TaskManagerClosing)await Quit();else Hide();};
         timer.Interval=1000;timer.Tick+=(s,e)=>{
             if(enabled&&!development&&DateTime.UtcNow>=nextNetworkCheck){nextNetworkCheck=DateTime.UtcNow.AddSeconds(5);try{
@@ -117,6 +122,7 @@ internal sealed class HostWindow : Form {
         try{using(var setup=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"--configure-firewall"){UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden})){
             await Task.Run(()=>setup.WaitForExit());
             details.Text=setup.ExitCode==0?"Network setup is complete. Access stays disabled until you enable it.":"Network setup did not finish. Ask your Windows administrator to configure Spatial PC.";
+            if(setup.ExitCode==0&&worker==null)StartWorker();
         }}catch(Exception){details.Text="Network setup was canceled or unavailable. Access stays disabled.";}
         finally{firewall.Enabled=!enabled;}
     }
