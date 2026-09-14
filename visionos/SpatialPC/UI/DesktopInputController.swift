@@ -6,7 +6,7 @@ import UIKit
 @MainActor final class DesktopInputController: NSObject {
     private weak var view: UIView?
     private let stream: LabStreamClient
-    private var keys = Set<Int32>()
+    private var keyboard = InputWire.KeyboardState()
     private var buttons = Set<Int32>()
     private var wheelRemainder = CGPoint.zero
     var available: Bool { stream.inputAvailable && stream.hasFrames }
@@ -27,12 +27,12 @@ import UIKit
         return (x,y)
     }
     func stop() {
-        keys.removeAll(); buttons.removeAll(); wheelRemainder = .zero
+        keyboard = InputWire.KeyboardState(); buttons.removeAll(); wheelRemainder = .zero
         stream.stopControl()
     }
     private func start() -> Bool {
         guard available else { return false }
-        if !stream.controlling { keys.removeAll(); buttons.removeAll(); wheelRemainder = .zero }
+        if !stream.controlling { keyboard = InputWire.KeyboardState(); buttons.removeAll(); wheelRemainder = .zero }
         guard stream.startControl() else { return false }
         view?.becomeFirstResponder(); return true
     }
@@ -61,7 +61,7 @@ import UIKit
         if phase == .cancelled { stop(); return }
         if phase == .began { guard start() else { return } }
         guard stream.controlling else { return }
-        if let event { reconcileModifiers(event.modifierFlags) }
+        if let event { for change in keyboard.reconcile(Self.modifiers(event.modifierFlags)) { stream.sendInput(change) } }
         if phase == .moved { stream.sendInput(.position(x:x,y:y)) }
         var wanted = Set<Int32>()
         if touch.type == .indirectPointer {
@@ -75,15 +75,12 @@ import UIKit
         for button in wanted.subtracting(buttons).sorted() { stream.sendInput(.button(button,down:true,x:x,y:y)) }
         buttons = wanted
     }
-    private func reconcileModifiers(_ flags:UIKeyModifierFlags) {
-        let groups:[(UIKeyModifierFlags,Int32,Int32)] = [(.control,0xE0,0xE4),(.shift,0xE1,0xE5),(.alternate,0xE2,0xE6),(.command,0xE3,0xE7)]
-        for (flag,left,right) in groups {
-            if flags.contains(flag) {
-                if !keys.contains(left),!keys.contains(right) { keys.insert(left); stream.sendInput(.key(left,down:true)) }
-            } else {
-                for key in [left,right] where keys.remove(key) != nil { stream.sendInput(.key(key,down:false)) }
-            }
+    private static func modifiers(_ flags:UIKeyModifierFlags) -> UInt8 {
+        var result: UInt8 = 0
+        for (index,flag) in [UIKeyModifierFlags.control,.shift,.alternate,.command].enumerated() {
+            if flags.contains(flag) { result |= 1 << index }
         }
+        return result
     }
     func presses(_ presses:Set<UIPress>,down:Bool) -> Bool {
         guard stream.controlling,view?.isFirstResponder == true else { return false }
@@ -94,14 +91,11 @@ import UIKit
         }
         for key in ordered {
             let usage = Int32(key.keyCode.rawValue)
-            guard InputWire.allowedKey(usage) else { continue }
-            if !(0xE0...0xE7).contains(usage) { reconcileModifiers(key.modifierFlags) }
-            let held = keys.contains(usage)
-            if down {
-                let ordinaryCount = keys.filter { $0 < 0xE0 }.count
-                guard held || ((usage >= 0xE0 || ordinaryCount < 32) && keys.count < 40) else { stop(); return true }
-                keys.insert(usage); stream.sendInput(.key(usage,down:true,repeated:held))
-            } else if keys.remove(usage) != nil { stream.sendInput(.key(usage,down:false)) }
+            do {
+                for change in try keyboard.change(usage,down:down,modifiers:Self.modifiers(key.modifierFlags)) {
+                    stream.sendInput(change)
+                }
+            } catch { stop(); return true }
         }
         return true
     }

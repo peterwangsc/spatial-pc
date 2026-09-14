@@ -50,4 +50,30 @@ final class InputWireTests: XCTestCase {
         let current = try StreamWire.capabilities(Data((prefix+",\"input\":{\"version\":1,\"enabled\":true,\"wire\":\"SPI1\",\"recordBytes\":24,\"maxEventsPerSecond\":240,\"heartbeatMS\":500,\"leaseMS\":2000}}").utf8))
         XCTAssertEqual(current.input?.supported,true)
     }
+    func testModifierHeldBeforeControlIsReleasedByItsPhysicalSide() throws {
+        var keyboard = InputWire.KeyboardState()
+        XCTAssertEqual(keyboard.reconcile(1),[.key(0xE0,down:true)])
+        XCTAssertEqual(try keyboard.change(0xE4,down:false,modifiers:0),[.key(0xE0,down:false)])
+        XCTAssertTrue(keyboard.held.isEmpty)
+        _ = try keyboard.change(0xE0,down:true,modifiers:0)
+        _ = try keyboard.change(0xE4,down:true,modifiers:1)
+        XCTAssertEqual(try keyboard.change(0xE4,down:false,modifiers:1),[.key(0xE4,down:false)])
+        XCTAssertEqual(keyboard.held,[0xE0])
+        keyboard = InputWire.KeyboardState()
+        _ = keyboard.reconcile(1)
+        _ = try keyboard.change(0xE0,down:true,modifiers:1)
+        _ = try keyboard.change(0xE4,down:true,modifiers:1)
+        _ = try keyboard.change(0xE4,down:false,modifiers:1)
+        XCTAssertEqual(keyboard.held,[0xE0])
+    }
+    func testKeyRepeatAndHeldKeyBound() throws {
+        var keyboard = InputWire.KeyboardState()
+        XCTAssertEqual(try keyboard.change(4,down:true,modifiers:2),[.key(0xE1,down:true),.key(4,down:true)])
+        XCTAssertEqual(try keyboard.change(4,down:true,modifiers:2),[.key(4,down:true,repeated:true)])
+        XCTAssertEqual(try keyboard.change(4,down:false,modifiers:0),[.key(0xE1,down:false),.key(4,down:false)])
+        XCTAssertTrue(keyboard.held.isEmpty)
+        for key:Int32 in 4..<36 { _ = try keyboard.change(key,down:true,modifiers:0) }
+        XCTAssertThrowsError(try keyboard.change(36,down:true,modifiers:0))
+    }
+
 }

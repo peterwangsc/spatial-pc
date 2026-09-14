@@ -45,6 +45,53 @@ enum InputWire {
         guard value.isFinite,extent.isFinite,extent > 0 else { return nil }
         return Int32((min(1,max(0,value/extent))*65535).rounded())
     }
+    struct KeyboardState {
+        private(set) var held = Set<Int32>()
+        private var inferred = Set<Int32>()
+        // Portable bits: control, shift, alt, GUI. Explicit HID events preserve sides.
+        mutating func reconcile(_ mask:UInt8) -> [Event] {
+            var result = [Event]()
+            for bit in 0..<4 {
+                let left = Int32(0xE0+bit),right = left+4
+                if mask & (1 << bit) != 0 {
+                    if !held.contains(left),!held.contains(right) {
+                        held.insert(left); inferred.insert(left); result.append(.key(left,down:true))
+                    }
+                } else {
+                    for key in [left,right] where held.remove(key) != nil {
+                        inferred.remove(key); result.append(.key(key,down:false))
+                    }
+                }
+            }
+            return result
+        }
+        mutating func change(_ usage:Int32,down:Bool,modifiers:UInt8) throws -> [Event] {
+            guard allowedKey(usage) else { return [] }
+            let modifier = usage >= 0xE0
+            var result = modifier ? [] : reconcile(modifiers)
+            let alreadyHeld = held.contains(usage)
+            if down {
+                if alreadyHeld {
+                    if modifier { inferred.remove(usage) }
+                    if !modifier { result.append(.key(usage,down:true,repeated:true)) }
+                    return result
+                }
+                guard held.count < 40,modifier || held.filter({ $0 < 0xE0 }).count < 32 else { throw Failure.overflow }
+                held.insert(usage); inferred.remove(usage); result.append(.key(usage,down:true))
+            } else if held.remove(usage) != nil {
+                inferred.remove(usage); result.append(.key(usage,down:false))
+            }
+            if modifier {
+                // A modifier held before control started has an inferred left side.
+                // Its later explicit right-side release must also release that fallback.
+                let group = (usage-0xE0)%4
+                for key in inferred.sorted() where (key-0xE0)%4 == group {
+                    held.remove(key); inferred.remove(key); result.append(.key(key,down:false))
+                }
+            }
+            return result
+        }
+    }
     struct Outbox {
         private(set) var events = [Event]()
         private(set) var sequence: UInt32 = 0
