@@ -46,7 +46,7 @@ private struct DesktopMetalSurface: UIViewRepresentable {
     private var pipeline: MTLRenderPipelineState?
     private var aspect: CGFloat
     private var appliedAspect: CGFloat?
-    private var submittedFrame = -1
+    private var submittedFrame: UInt64?
     private var submittedSize = CGSize.zero
     private var inFlight = false
 
@@ -85,24 +85,29 @@ private struct DesktopMetalSurface: UIViewRepresentable {
                 Task { @MainActor in self?.renderer.reportWindowError("Could not match the desktop window size: \(error)") }
             }
     }
-    func mtkView(_ view:MTKView,drawableSizeWillChange size:CGSize) { submittedFrame = -1 }
+    func mtkView(_ view:MTKView,drawableSizeWillChange size:CGSize) { submittedFrame = nil }
     func draw(in view:MTKView) {
         guard !inFlight, let pipeline,
-              submittedFrame != renderer.completedFrames || submittedSize != drawableSize,
+              submittedFrame != renderer.windowRevision || submittedSize != drawableSize,
               let frame = renderer.makeWindowFrame(),
               let pass = currentRenderPassDescriptor, let drawable = currentDrawable,
               let encoder = frame.command.makeRenderCommandEncoder(descriptor:pass) else { return }
-        inFlight = true; submittedFrame = renderer.completedFrames; submittedSize = drawableSize
+        let begin = CACurrentMediaTime()
+        let revision = renderer.windowRevision
+        inFlight = true; submittedFrame = revision; submittedSize = drawableSize
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(frame.texture,index:0)
         encoder.drawPrimitives(type:.triangle,vertexStart:0,vertexCount:3)
         encoder.endEncoding()
         frame.command.present(drawable)
+        let cpuMS = (CACurrentMediaTime()-begin)*1000
         frame.command.addCompletedHandler { [weak self] command in
             let failed = command.status == .error
+            let gpuMS = max(0,command.gpuEndTime-command.gpuStartTime)*1000
             Task { @MainActor in
                 self?.inFlight = false
-                if failed { self?.submittedFrame = -1; self?.renderer.reportWindowError("Desktop presentation failed.") }
+                self?.renderer.windowPresentationCompleted(revision:revision,gpuMS:gpuMS,cpuMS:cpuMS,failed:failed)
+                if failed { self?.submittedFrame = nil; self?.renderer.reportWindowError("Desktop presentation failed.") }
             }
         }
         frame.command.commit()

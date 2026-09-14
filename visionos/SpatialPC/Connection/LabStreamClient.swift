@@ -13,11 +13,13 @@ final class LabStreamClient {
     private(set) var available = false
     private(set) var connected = false
     private(set) var active = false
-    private(set) var receivedFrames = 0
-    private(set) var decodeMS = 0.0
-    private(set) var hardwareDecoder = false
+    private(set) var hasFrames = false
+    @ObservationIgnored private(set) var receivedFrames = 0
+    @ObservationIgnored private(set) var decodeMS = 0.0
+    @ObservationIgnored private(set) var hardwareDecoder = false
     @ObservationIgnored private var connection: NWConnection?
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private let diagnosticsQueue = DispatchQueue(label:"SpatialPC.connection-metrics",qos:.utility)
     @ObservationIgnored private let queue = DispatchQueue(label:"SpatialPC.secure-stream",qos:.userInteractive)
     @ObservationIgnored private let decoderQueue = DispatchQueue(label:"SpatialPC.decode",qos:.userInteractive)
     @ObservationIgnored private let renderer: SyntheticRenderer
@@ -29,9 +31,17 @@ final class LabStreamClient {
     }
     private func saveDiagnostics() {
         let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
-        let values: [String:Any] = ["status":status,"frames":receivedFrames,"decodeMS":decodeMS,"hardwareDecoder":hardwareDecoder]
-        if let data = try? JSONSerialization.data(withJSONObject:values) {
-            try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
+        struct Snapshot: Encodable, Sendable {
+            let status: String
+            let frames: Int
+            let decodeMS: Double
+            let hardwareDecoder: Bool
+        }
+        let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder)
+        diagnosticsQueue.async {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to:root.appendingPathComponent("connection-diagnostics.json"),options:.atomic)
+            }
         }
     }
     func refreshPairing() {
@@ -41,7 +51,7 @@ final class LabStreamClient {
         } catch { available = false; status = "Lab enrollment could not be loaded: \(error)"; userMessage = "Your saved pairing could not be loaded. Set up this PC again." }
     }
     func disconnect() {
-        generation = UUID(); connection?.cancel(); connection = nil; connected = false; active = false
+        generation = UUID(); connection?.cancel(); connection = nil; connected = false; active = false; hasFrames = false
         renderer.endVideo(); status = "Disconnected"; userMessage = nil
     }
     func connect() {
@@ -71,7 +81,7 @@ final class LabStreamClient {
             let parameters = NWParameters(tls:tls,tcp:NWProtocolTCP.Options())
             let connection = NWConnection(host:NWEndpoint.Host(pair.host),port:port,using:parameters)
             self.connection = connection; active = true; let sessionID = UUID(); generation = sessionID
-            status = "Authenticating paired PC…"; receivedFrames = 0
+            status = "Authenticating paired PC…"; receivedFrames = 0; hasFrames = false
             connection.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
                     guard let self, self.generation == sessionID else { return }
@@ -95,19 +105,20 @@ final class LabStreamClient {
             connection.start(queue:queue)
         } catch { status = "Could not authenticate the lab pair: \(error)"; connection?.cancel(); connection = nil; active = false; userMessage = "Could not use this saved pairing. Set up the PC again." }
     }
-    private func send(_ data: Data, on connection: NWConnection) async throws {
+    nonisolated private func send(_ data: Data, on connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
             connection.send(content:data,completion:.contentProcessed { error in
                 if let error { continuation.resume(throwing:error) } else { continuation.resume() }
             })
         }
     }
-    private func receive(_ size: Int, on connection: NWConnection) async throws -> Data {
+    nonisolated private func receive(_ size: Int, on connection: NWConnection) async throws -> Data {
         var result = Data()
+        result.reserveCapacity(size)
         while result.count < size {
             let remaining = size-result.count
             let part: Data = try await withCheckedThrowingContinuation { continuation in
-                connection.receive(minimumIncompleteLength:1,maximumLength:remaining) { data, _, _, error in
+                connection.receive(minimumIncompleteLength:remaining,maximumLength:remaining) { data, _, _, error in
                     if let error { continuation.resume(throwing:error) }
                     else if let data, !data.isEmpty { continuation.resume(returning:data) }
                     else { continuation.resume(throwing:Failure.ended) }
@@ -144,6 +155,7 @@ final class LabStreamClient {
                 guard generation == sessionID else { return }
                 if let frame {
                     renderer.presentVideo(frame.pixel)
+                    if !hasFrames { hasFrames = true }
                     receivedFrames += 1; decodeMS = frame.decodeMS; hardwareDecoder = frame.hardware
                     if receivedFrames % 60 == 0 { saveDiagnostics() }
                     status = "Live PC · encrypted · " + (hardwareDecoder ? "hardware decode" : "simulator decode")

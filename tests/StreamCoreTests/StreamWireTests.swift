@@ -16,6 +16,18 @@ final class StreamWireTests: XCTestCase {
         XCTAssertThrowsError(try StreamWire.annexBUnits(Data([0,0,1,0x80])))
         XCTAssertThrowsError(try StreamWire.annexBUnits(Data([0,0,1])))
     }
+    func testBorrowedStorageAndMalformedNALBoundaries() throws {
+        let padded = Data([99,99,0,0,1,0x65,1,2,3])
+        XCTAssertEqual(try StreamWire.annexBUnits(padded.dropFirst(2)),[Data([0x65,1,2,3])])
+        XCTAssertThrowsError(try StreamWire.annexBUnits(Data([0,0,1,0x65,0,0,1])))
+        XCTAssertThrowsError(try StreamWire.annexBUnits(Data([0,0,1,0x65,0,0,1,0x80])))
+        XCTAssertThrowsError(try StreamWire.annexBUnits(Data([9,0,0,1,0x65])))
+        var large = Data([0,0,0,1,0x65]); large.append(Data(repeating:0x55,count:1_000_000))
+        let units = try StreamWire.annexBUnits(large)
+        let avcc = StreamWire.avcc(units)
+        XCTAssertEqual(StreamWire.unsigned(avcc.prefix(4)),1_000_001)
+        XCTAssertEqual(avcc.dropFirst(4),large.dropFirst(4))
+    }
     func testUnsupportedCapabilities() throws {
         func message(_ version:Int=1,_ codec:String="h264-annexb",_ width:Int=1920)->Data {
             Data("{\"version\":\(version),\"codec\":\"\(codec)\",\"width\":\(width),\"height\":1080,\"fps\":60,\"hardwareEncoder\":true}".utf8)

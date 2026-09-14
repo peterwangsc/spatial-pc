@@ -29,7 +29,7 @@ The generated project uses a placeholder bundle identifier and no signing team. 
 SPATIAL_PC_TEAM=YOUR_TEAM_ID SPATIAL_PC_BUNDLE_ID=YOUR_REGISTERED_BUNDLE_ID python3 scripts/generate_project.py
 ```
 
-Choose a simulator or provisioned Vision Pro in Xcode and run the `SpatialPC` scheme. Actual desktop streaming currently requires the Debug-only lab provisioning described in the [protocol notes](docs/protocol.md). Release builds exclude that lab client; they are not a complete remote desktop product.
+Choose a simulator or provisioned Vision Pro in Xcode and run the `SpatialPC` scheme. Use the **Lab** build configuration for performance measurements: it enables Swift optimization while retaining development enrollment. Debug deliberately leaves Swift unoptimized. Actual desktop streaming currently requires the lab provisioning described in the [protocol notes](docs/protocol.md). Release builds exclude that lab client; they are not a complete remote desktop product.
 
 ## Windows development
 
@@ -57,7 +57,7 @@ On Windows, `windows\host\test_cursor.cmd` validates GPU cursor composition. Cap
 
 Never commit pairing credentials, private keys, signing certificates, provisioning profiles, personal desktop recordings, or device logs. Generate distinct credentials for your own development environment. Public source does not grant access to someone else's PC; each connection still requires authenticated pairing.
 
-The planned Windows host download page is [peterwang.tech/spatial-pc](https://peterwang.tech/spatial-pc). Installer and App Store distribution are separate milestones.
+The Windows host download page is [peterwang.tech/spatial-pc](https://peterwang.tech/spatial-pc). Installer and App Store distribution are separate milestones.
 
 ## License
 

@@ -68,7 +68,7 @@ final class H264Decoder: @unchecked Sendable {
         configuredSPS = sps; configuredPPS = pps; needsIDR = true
     }
     func decode(_ data: Data, timestamp: Int64) throws -> Frame? {
-        let begin = CFAbsoluteTimeGetCurrent()
+        let begin = ContinuousClock.now
         let units = try StreamWire.annexBUnits(data)
         for unit in units {
             if unit.first! & 31 == 7 { sps = unit }
@@ -110,7 +110,8 @@ final class H264Decoder: @unchecked Sendable {
         })
         try check(VTDecompressionSessionWaitForAsynchronousFrames(session))
         try check(result.status)
-        lastDecodeMS = (CFAbsoluteTimeGetCurrent()-begin)*1000
+        let elapsed = begin.duration(to:.now).components
+        lastDecodeMS = Double(elapsed.seconds)*1000 + Double(elapsed.attoseconds)/1e15
         return result.pixel.map { Frame(pixel:$0,decodeMS:lastDecodeMS,hardware:hardware) }
     }
 }
