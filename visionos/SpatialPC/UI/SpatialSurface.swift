@@ -43,8 +43,8 @@ struct SpatialSurface: View {
             Attachment(id:"back") { DesktopNavigationButton(model:model,action:.back) }
             Attachment(id:"focus") { DesktopNavigationButton(model:model,action:.focus) }
         }
-        .onAppear { model.isImmersed = true }
-        .onDisappear { model.isImmersed = false; model.spatialDisplay = nil }
+        .onAppear { model.isImmersed = true; model.renderer.setSpatialVideoActive(true) }
+        .onDisappear { model.renderer.setSpatialVideoActive(false); model.isImmersed = false; model.spatialDisplay = nil }
     }
 }
 

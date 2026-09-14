@@ -19,7 +19,7 @@ struct ControlCenter: View {
     }
     private var streaming: Bool {
         #if DEBUG
-        model.stream.active && model.stream.receivedFrames > 0
+        model.stream.active && model.stream.hasFrames
         #else
         false
         #endif

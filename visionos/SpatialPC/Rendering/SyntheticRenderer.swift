@@ -9,15 +9,22 @@ import CoreVideo
 @MainActor @Observable
 final class SyntheticRenderer: NSObject {
     private(set) var material: UnlitMaterial?
-    private(set) var fps = 0.0
-    private(set) var gpuMilliseconds = 0.0
-    private(set) var submitMilliseconds = 0.0
-    private(set) var completedFrames = 0
-    private(set) var droppedTicks = 0
+    @ObservationIgnored private(set) var fps = 0.0
+    @ObservationIgnored private(set) var gpuMilliseconds = 0.0
+    @ObservationIgnored private(set) var submitMilliseconds = 0.0
+    @ObservationIgnored private(set) var completedFrames = 0
+    @ObservationIgnored private(set) var droppedTicks = 0
     private(set) var error: String?
     private(set) var dimensions = SIMD2(1920, 1080)
     private(set) var running = false
     private(set) var videoMode = false
+    // Monotonic across reconnects: an old drawable must never suppress a new session's first frame.
+    @ObservationIgnored private(set) var windowRevision: UInt64 = 0
+    @ObservationIgnored private var firstVideoRevision: UInt64 = 0
+    @ObservationIgnored private var latestVideo: RetainedFrame?
+    @ObservationIgnored private var spatialVideoActive = false
+    @ObservationIgnored private var renderGeneration = UUID()
+    @ObservationIgnored private let metricsQueue = DispatchQueue(label:"SpatialPC.renderer-metrics",qos:.utility)
     @ObservationIgnored private var videoCache: CVMetalTextureCache?
     @ObservationIgnored private var texture: LowLevelTexture?
     @ObservationIgnored private var queue: MTLCommandQueue?
@@ -42,6 +49,7 @@ final class SyntheticRenderer: NSObject {
         let height: Int
         let environment: String
         let source: String
+        let presentationPath: String
     }
 
     func start(width: Int = 1920, height: Int = 1080) async {
@@ -54,6 +62,7 @@ final class SyntheticRenderer: NSObject {
                   let kernel = device.makeDefaultLibrary()?.makeFunction(name: "syntheticPattern") else {
                 throw RenderError.unavailable
             }
+            renderGeneration = UUID(); inFlight = false; latestVideo = nil
             self.queue = queue
             pipeline = try await device.makeComputePipelineState(function: kernel)
             dimensions = SIMD2(width,height)
@@ -76,7 +85,15 @@ final class SyntheticRenderer: NSObject {
 
     // Use the producer queue so presentation reads follow texture writes on the GPU.
     func makeWindowFrame() -> (command: MTLCommandBuffer, texture: MTLTexture)? {
-        guard let texture, let command = queue?.makeCommandBuffer() else { return nil }
+        guard let command = queue?.makeCommandBuffer() else { return nil }
+        if videoMode {
+            guard let frame = latestVideo else { return nil }
+            // Reading the decoder's IOSurface directly removes a full-frame intermediate blit.
+            // Keep BOTH Core Video objects alive until the GPU finishes, even after reconnect.
+            command.addCompletedHandler { [frame] _ in withExtendedLifetime(frame) {} }
+            return (command,frame.texture)
+        }
+        guard let texture else { return nil }
         return (command,texture.read())
     }
     func reportWindowError(_ message:String) { error = message }
@@ -100,41 +117,74 @@ final class SyntheticRenderer: NSObject {
         stop()
         await start(width:width,height:height)
         stop(); videoMode = true; measurements = []
+        firstVideoRevision = windowRevision &+ 1
         if let device = queue?.device { CVMetalTextureCacheCreate(nil,nil,device,nil,&videoCache) }
     }
 
     func endVideo() {
         if videoMode { saveMeasurements(); measurements = [] }
+        renderGeneration = UUID(); inFlight = false; latestVideo = nil
         videoMode = false; resume()
     }
 
     private struct RetainedFrame: @unchecked Sendable {
         let mapped: CVMetalTexture
         let pixel: CVPixelBuffer
+        let texture: MTLTexture
+        let revision: UInt64
     }
+
+    func setSpatialVideoActive(_ active: Bool) {
+        spatialVideoActive = active
+        if active, let frame = latestVideo { copyToSpatialTexture(frame) }
+    }
+
     func presentVideo(_ pixel: CVPixelBuffer) {
         guard videoMode, CVPixelBufferGetWidth(pixel) == dimensions.x,
-              CVPixelBufferGetHeight(pixel) == dimensions.y else { return }
-        guard !inFlight else { droppedTicks += 1; return }
-        guard let videoCache, let texture, let command = queue?.makeCommandBuffer() else { return }
-        let begin = CACurrentMediaTime()
+              CVPixelBufferGetHeight(pixel) == dimensions.y, let videoCache else { return }
         var mapped: CVMetalTexture?
         let result = CVMetalTextureCacheCreateTextureFromImage(nil,videoCache,pixel,nil,.bgra8Unorm,
             dimensions.x,dimensions.y,0,&mapped)
-        guard result == kCVReturnSuccess, let mapped, let source = CVMetalTextureGetTexture(mapped),
-              let blit = command.makeBlitCommandEncoder() else { error = "Could not map decoded frame to Metal"; return }
+        guard result == kCVReturnSuccess, let mapped, let source = CVMetalTextureGetTexture(mapped) else {
+            error = "Could not map decoded frame to Metal"; return
+        }
+        windowRevision &+= 1
+        let frame = RetainedFrame(mapped:mapped,pixel:pixel,texture:source,revision:windowRevision)
+        // A single replaceable decoded frame, not an unbounded presentation queue.
+        latestVideo = frame
+        if spatialVideoActive { copyToSpatialTexture(frame) }
+    }
+
+    private func copyToSpatialTexture(_ frame: RetainedFrame) {
+        guard !inFlight else { droppedTicks += 1; return }
+        guard let texture, let command = queue?.makeCommandBuffer(),
+              let blit = command.makeBlitCommandEncoder() else { return }
+        let begin = CACurrentMediaTime(), generation = renderGeneration
         inFlight = true
-        blit.copy(from:source,to:texture.replace(using:command)); blit.endEncoding()
+        blit.copy(from:frame.texture,to:texture.replace(using:command)); blit.endEncoding()
         let cpuMS = (CACurrentMediaTime()-begin)*1000
-        let retained = RetainedFrame(mapped:mapped,pixel:pixel)
-        command.addCompletedHandler { [weak self, retained] command in
-            // Core Video objects must remain alive until the GPU finishes reading.
-            withExtendedLifetime(retained) {}
+        command.addCompletedHandler { [weak self, frame] command in
+            withExtendedLifetime(frame) {}
             let gpuMS = max(0,command.gpuEndTime-command.gpuStartTime)*1000
             let failed = command.status == .error
-            Task { @MainActor in self?.complete(cpuMS:cpuMS,gpuMS:gpuMS,failed:failed) }
+            Task { @MainActor in
+                guard let self, self.renderGeneration == generation else { return }
+                self.complete(cpuMS:cpuMS,gpuMS:gpuMS,failed:failed)
+                // If decoding overtook the copy, submit the newest image instead of showing an old one.
+                if !failed, self.videoMode, self.spatialVideoActive,
+                   let latest = self.latestVideo, latest.revision != frame.revision {
+                    self.copyToSpatialTexture(latest)
+                }
+            }
         }
         command.commit()
+    }
+
+    func windowPresentationCompleted(revision: UInt64, gpuMS: Double, cpuMS: Double, failed: Bool) {
+        guard videoMode, !spatialVideoActive, let latestVideo,
+              revision >= firstVideoRevision, revision <= latestVideo.revision else { return }
+        // Window draw completion measures submitted GPU work, not headset scanout latency.
+        recordCompletion(cpuMS:cpuMS,gpuMS:gpuMS,failed:failed)
     }
 
     @objc private func tick() {
@@ -142,7 +192,7 @@ final class SyntheticRenderer: NSObject {
         guard let texture, let pipeline, let command = queue?.makeCommandBuffer(),
               let encoder = command.makeComputeCommandEncoder() else { return }
         inFlight = true
-        let begin = CACurrentMediaTime()
+        let begin = CACurrentMediaTime(), generation = renderGeneration
         var time = Float(begin-startTime)
         encoder.setComputePipelineState(pipeline)
         encoder.setTexture(texture.replace(using: command), index: 0)
@@ -156,13 +206,21 @@ final class SyntheticRenderer: NSObject {
         command.addCompletedHandler { [weak self] command in
             let gpuMS = max(0,command.gpuEndTime-command.gpuStartTime)*1000
             let failed = command.status == .error
-            Task { @MainActor in self?.complete(cpuMS: cpuMS, gpuMS: gpuMS, failed: failed) }
+            Task { @MainActor in
+                guard let self, self.renderGeneration == generation else { return }
+                self.windowRevision &+= 1
+                self.complete(cpuMS:cpuMS,gpuMS:gpuMS,failed:failed)
+            }
         }
         command.commit()
     }
 
     private func complete(cpuMS: Double, gpuMS: Double, failed: Bool) {
         inFlight = false
+        recordCompletion(cpuMS:cpuMS,gpuMS:gpuMS,failed:failed)
+    }
+
+    private func recordCompletion(cpuMS: Double, gpuMS: Double, failed: Bool) {
         guard !failed else { error = "Metal command failed"; stop(); return }
         completedFrames += 1; sampleFrames += 1
         gpuMilliseconds = gpuMS; submitMilliseconds = cpuMS
@@ -176,7 +234,8 @@ final class SyntheticRenderer: NSObject {
             #endif
             let sample = Measurement(elapsed:now-startTime,submittedFPS:fps,gpuMS:gpuMS,cpuSubmitMS:cpuMS,
                 completedFrames:completedFrames,droppedTicks:droppedTicks,width:dimensions.x,height:dimensions.y,
-                environment:environment,source:videoMode ? "remote h264" : "synthetic")
+                environment:environment,source:videoMode ? "remote h264" : "synthetic",
+                presentationPath:videoMode ? (spatialVideoActive ? "RealityKit texture copy" : "direct decoded texture window") : "synthetic texture")
             measurements.append(sample)
             if measurements.count > 300 { measurements.removeFirst() }
             logger.info("render fps=\(self.fps) gpu_ms=\(gpuMS) frames=\(self.completedFrames)")
@@ -185,9 +244,13 @@ final class SyntheticRenderer: NSObject {
     }
 
     private func saveMeasurements() {
-        guard let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask).first,
-              let data = try? JSONEncoder().encode(measurements) else { return }
-        try? data.write(to:root.appendingPathComponent(videoMode ? "stream-metrics.json" : "synthetic-metrics.json"),options:.atomic)
+        guard let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask).first else { return }
+        let snapshot = measurements
+        let url = root.appendingPathComponent(videoMode ? "stream-metrics.json" : "synthetic-metrics.json")
+        metricsQueue.async {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            try? data.write(to:url,options:.atomic)
+        }
     }
     enum RenderError: Error { case unavailable }
 }
