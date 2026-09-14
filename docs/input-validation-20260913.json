@@ -1,0 +1,26 @@
+{
+  "fixtureOnly": true,
+  "desktopCapture": false,
+  "inputInjection": false,
+  "tls": "TLSv1.3",
+  "certificateNegatives": true,
+  "hostDefaultViewOnly": true,
+  "oldClientViewOnly": true,
+  "unsupportedVersionViewOnly": true,
+  "duplexVideoFrames": 40,
+  "disconnectRelease": {
+    "events": 5,
+    "downs": 2,
+    "ups": 2
+  },
+  "leaseRelease": {
+    "events": 2,
+    "downs": 1,
+    "ups": 1
+  },
+  "replayRelease": {
+    "events": 3,
+    "downs": 1,
+    "ups": 1
+  }
+}
