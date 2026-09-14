@@ -17,6 +17,7 @@ final class LabStreamClient {
     private(set) var inputAvailable = false
     private(set) var textAvailable = false
     @ObservationIgnored private var keyPressEvents = 0
+    @ObservationIgnored private var navigationKeyCommands = 0
     @ObservationIgnored private var committedTextCallbacks = 0
     @ObservationIgnored private var keyboardFirstResponder = false
     @ObservationIgnored private var keyboardPresentationRequested = false
@@ -52,13 +53,14 @@ final class LabStreamClient {
             let queuedInputEvents: Int
             let textAvailable: Bool
             let keyPressEvents: Int
+            let navigationKeyCommands: Int
             let committedTextCallbacks: Int
             let keyboardFirstResponder: Bool
             let keyboardPresentationRequested: Bool
         }
         let snapshot = Snapshot(status:status,frames:receivedFrames,decodeMS:decodeMS,hardwareDecoder:hardwareDecoder,
                                 inputAvailable:inputAvailable,controlling:controlling,queuedInputEvents:inputOutbox.events.count,
-                                textAvailable:textAvailable,keyPressEvents:keyPressEvents,
+                                textAvailable:textAvailable,keyPressEvents:keyPressEvents,navigationKeyCommands:navigationKeyCommands,
                                 committedTextCallbacks:committedTextCallbacks,keyboardFirstResponder:keyboardFirstResponder,
                                 keyboardPresentationRequested:keyboardPresentationRequested)
         diagnosticsQueue.async {
@@ -75,7 +77,7 @@ final class LabStreamClient {
     }
     func disconnect() {
         controlling = false; inputAvailable = false; textAvailable = false
-        keyPressEvents = 0; committedTextCallbacks = 0; keyboardFirstResponder = false; keyboardPresentationRequested = false
+        keyPressEvents = 0; navigationKeyCommands = 0; committedTextCallbacks = 0; keyboardFirstResponder = false; keyboardPresentationRequested = false
         inputHeartbeat?.cancel(); inputHeartbeat = nil
         inputWriter?.cancel(); inputWriter = nil; inputWriteStarted = nil
         inputOutbox = InputWire.Outbox()
@@ -165,6 +167,7 @@ final class LabStreamClient {
     func recordKeyboardFocus(_ focused:Bool) { keyboardFirstResponder = focused; saveDiagnostics() }
     func recordKeyboardPresentation(_ requested:Bool) { keyboardPresentationRequested = requested; saveDiagnostics() }
     func recordKeyPresses(_ count:Int) { keyPressEvents += count }
+    func recordNavigationKeyCommand() { navigationKeyCommands += 1 }
     func recordTextCallback() { committedTextCallbacks += 1 }
     private func failInput() {
         disconnect(); status = "Input session ended safely."

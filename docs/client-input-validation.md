@@ -36,6 +36,14 @@ Peter confirmed that build 8 receives MacBook keyboard letters and that the floa
 
 The loopback simulator did not reproduce the old build's Space interception: two physical Space presses produced four balanced HID records in both builds. In build 9, clicking the keyboard button still requested the native keyboard, and clicking Back still disconnected. Optimized simulator and signed device builds passed. The actual headset must establish whether this focused change resolves Space routing; it is not yet marked fixed on hardware.
 
-### User confirmation received September 14
+### Correction to the relayed success report
 
-The PC thread relayed Peter's report that the current headset experience “works,” following the morning keyboard handoff. Record this as user-confirmed overall success. Build 9 (client source `2eff5f9`) is the latest installed build; the confirmation did not separately identify the build or enumerate physical keyboard, floating keyboard or Space checks. It therefore does not establish a detailed per-input regression matrix. No host restart, workload, release or upload followed this confirmation.
+Peter clarified that his apparent success message was typed without physical spaces; its one space came from the floating keyboard. The earlier overall-success interpretation was incorrect and is withdrawn. He had not tried build 9 at that point. After explicitly testing build 9, he confirmed that both physical Tab and Space still navigate local chrome. Physical letters and floating-keyboard input work; physical Tab/Space routing remains broken. Removing button focus alone did not resolve it.
+
+### Build 10 priority navigation commands
+
+The native desktop registers plain and Shift-modified Space/Tab `UIKeyCommand`s with `wantsPriorityOverSystemBehavior`, scoped to available remote input and first-responder ownership. Raw press handling passes these keys to UIKit so the commands can dispatch; other physical keys retain their existing HID path. Each command sends a balanced HID tap. Action validation allows only this selector while the desktop owns input; clipboard actions remain disabled. Count-only diagnostics distinguish command callbacks from raw presses and committed text.
+
+In the loopback simulator, two Space and two Tab presses produced four command callbacks, eight HID records (four Space/four Tab), zero raw-key callbacks, zero committed-text callbacks and zero held keys. Further presses and a normal letter retained balanced delivery; clicking the keyboard button still requested presentation and clicking Back still disconnected and cleared responder/control state. Sixteen Swift tests, optimized simulator and signed Lab device builds pass. This establishes the command path and absence of duplicate delivery in Simulator; physical AVP Tab/Space acceptance remains pending build 10 testing.
+
+Reference: Apple's [keyboard navigation guidance](https://developer.apple.com/videos/play/wwdc2021/10260/) describes priority key commands for conflicts with system focus navigation.

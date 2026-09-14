@@ -100,6 +100,18 @@ import UIKit
         }
         return result
     }
+    func navigationKeyCommand(_ command:UIKeyCommand) {
+        guard view?.isFirstResponder == true, available,
+              command.input == " " || command.input == "\t", start() else { return }
+        stream.recordNavigationKeyCommand()
+        let usage:Int32 = command.input == " " ? 0x2C : 0x2B
+        let flags = Self.modifiers(command.modifierFlags)
+        do {
+            // A command has no key-up callback; send one balanced HID tap.
+            for event in try keyboard.change(usage,down:true,modifiers:flags)
+                + keyboard.change(usage,down:false,modifiers:flags) { stream.sendInput(event) }
+        } catch { stop() }
+    }
     func presses(_ presses:Set<UIPress>,down:Bool) -> Bool {
         stream.recordKeyPresses(presses.count)
         guard view?.isFirstResponder == true else { return false }

@@ -144,16 +144,49 @@ private struct DesktopMetalSurface: UIViewRepresentable {
         guard input?.activateKeyboard() == true else { return }
         reloadInputViews()
     }
-    override func canPerformAction(_ action:Selector,withSender sender:Any?) -> Bool { false }
+    // UIKit reserves Tab/Space for local focus navigation ahead of raw presses.
+    // Claim only those commands, and only while this remote surface owns input.
+    private lazy var desktopKeyCommands: [UIKeyCommand] = {
+        [" ", "\t"].flatMap { character in
+            [UIKeyModifierFlags(), .shift].map { modifiers in
+                let command = UIKeyCommand(input:character,modifierFlags:modifiers,
+                                           action:#selector(forwardNavigationKey(_:)))
+                command.wantsPriorityOverSystemBehavior = true
+                command.allowsAutomaticLocalization = false
+                return command
+            }
+        }
+    }()
+    override var keyCommands: [UIKeyCommand]? {
+        input?.available == true && isFirstResponder ? desktopKeyCommands : nil
+    }
+    @objc private func forwardNavigationKey(_ command:UIKeyCommand) {
+        input?.navigationKeyCommand(command)
+    }
+    override func canPerformAction(_ action:Selector,withSender sender:Any?) -> Bool {
+        action == #selector(forwardNavigationKey(_:)) && input?.available == true && isFirstResponder
+    }
     override func touchesBegan(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.began) }
     override func touchesMoved(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.moved) }
     override func touchesEnded(_ touches:Set<UITouch>,with event:UIEvent?) { input?.touches(touches,event:event,phase:.ended) }
     override func touchesCancelled(_ touches:Set<UITouch>,with event:UIEvent?) { input?.stop() }
+    private func commandPresses(in presses:Set<UIPress>) -> Set<UIPress> {
+        Set(presses.filter { press in
+            guard let key = press.key, key.keyCode == .keyboardSpacebar || key.keyCode == .keyboardTab else { return false }
+            return key.modifierFlags.intersection([.control,.alternate,.command]).isEmpty
+        })
+    }
     override func pressesBegan(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
-        if input?.presses(presses,down:true) != true { super.pressesBegan(presses,with:event) }
+        let commands = commandPresses(in:presses), physical = presses.subtracting(commands)
+        if !physical.isEmpty, input?.presses(physical,down:true) != true { super.pressesBegan(physical,with:event) }
+        // Allow UIKit to dispatch the priority commands instead of consuming
+        // their raw presses and potentially forwarding the same key twice.
+        if !commands.isEmpty { super.pressesBegan(commands,with:event) }
     }
     override func pressesEnded(_ presses:Set<UIPress>,with event:UIPressesEvent?) {
-        if input?.presses(presses,down:false) != true { super.pressesEnded(presses,with:event) }
+        let commands = commandPresses(in:presses), physical = presses.subtracting(commands)
+        if !physical.isEmpty, input?.presses(physical,down:false) != true { super.pressesEnded(physical,with:event) }
+        if !commands.isEmpty { super.pressesEnded(commands,with:event) }
     }
     override func pressesCancelled(_ presses:Set<UIPress>,with event:UIPressesEvent?) { input?.stop() }
     #endif
