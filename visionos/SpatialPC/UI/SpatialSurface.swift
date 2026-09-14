@@ -48,4 +48,3 @@ struct SpatialSurface: View {
         .onDisappear { model.renderer.setSpatialVideoActive(false); model.isImmersed = false; model.spatialDisplay = nil }
     }
 }
-
