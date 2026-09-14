@@ -1,0 +1,54 @@
+{
+  "boundary": "Observed event ordering only; correlations do not prove encoder or driver causality",
+  "trace_omitted": 0,
+  "submitted_frames": 781,
+  "encoded_frames": 781,
+  "outputs_during_capture_wait": 3,
+  "outputs_before_next_write": 640,
+  "outputs_at_or_after_next_write": 140,
+  "acquire_to_encoded_ms": {
+    "n": 781,
+    "p50": 9.7485,
+    "p95": 38.314800000000005,
+    "p99": 50.366600000000005,
+    "max": 60.6997
+  },
+  "write_enter_to_encoded_ms": {
+    "n": 781,
+    "p50": 9.2171,
+    "p95": 37.7094,
+    "p99": 49.772600000000004,
+    "max": 60.244
+  },
+  "next_write_gap_ms": {
+    "n": 780,
+    "p50": 26.899700000000003,
+    "p95": 44.665800000000004,
+    "p99": 49.300000000000004,
+    "max": 52.083200000000005
+  },
+  "output_minus_next_write_ms": {
+    "n": 780,
+    "p50": -10.8474,
+    "p95": 0.2821,
+    "p99": 8.549000000000001,
+    "max": 47.801700000000004
+  },
+  "output_after_latest_capture_return_ms": {
+    "n": 781,
+    "p50": 4.907500000000001,
+    "p95": 10.9428,
+    "p99": 13.7979,
+    "max": 32.307900000000004
+  },
+  "native_sha256": "7c272ef85142c660cad9db35c58196fa646a04afcc5a6428c8036e6278580d38",
+  "frames_read": 781,
+  "seconds_requested": 20,
+  "workload": "uncontrolled ordinary desktop; no visible workload; no competing capture",
+  "capture_wait_correlation": {
+    "capture_wait_fraction_of_traced_span": 0.5424005950390057,
+    "outputs_with_submit_age_over_25ms": 147,
+    "long_age_outputs_within_1ms_after_capture_return": 127,
+    "long_age_outputs_within_2ms_after_capture_return": 133
+  }
+}

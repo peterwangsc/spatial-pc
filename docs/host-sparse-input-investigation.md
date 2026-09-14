@@ -14,4 +14,14 @@ python tests/analyze_frame_trace.py path/to/encoder.log --output path/to/analysi
 
 The analyzer counts callbacks arriving inside a capture wait, before the next write, or at/after the next write. It reports signed output-minus-next-write offsets, source submission gaps and output age. A cluster just after the next write would support further investigation of input-dependent output; callbacks during an ongoing capture wait would show that at least those outputs can progress independently. Neither observation alone proves a particular driver or transform mechanism. Trace overhead and sparse source behavior need recording with any run.
 
-The diagnostic binary builds. CPU-only checks cover disabled output, cross-thread QPC ordering and bounded concurrent recording; analyzer fixtures distinguish independent and next-input-aligned output and reject unordered traces. **No diagnostic capture has run yet:** the user resumed physical headset viewing, and the existing tested host remains unchanged.
+The diagnostic binary builds. CPU-only checks cover disabled output, cross-thread QPC ordering and bounded concurrent recording; analyzer fixtures distinguish independent and next-input-aligned output and reject unordered traces.
+
+## Authorized 20-second ordinary-desktop trace
+
+After physical viewing paused, the separate diagnostic binary captured and drained 781 frames with zero omitted trace events. No visible workload or competing capture ran. Exact binary SHA-256: `7c272ef85142c660cad9db35c58196fa646a04afcc5a6428c8036e6278580d38`. Submit-to-output p50/p95/p99 was 9.217/37.709/49.773 ms, so the ordinary-desktop tail reproduced. This is one observational run, not an optimization comparison.
+
+Of 780 outputs with a following submitted input in the trace, **640 arrived before that next write**, and 140 at or after it. Thus output does not universally require another submitted input. Only **3 of 781 callbacks occurred during a capture wait**, although capture waits occupied about **54.24%** of the traced time span. Of 147 outputs whose submit-to-output age exceeded 25 ms, **127 arrived within 1 ms after a capture return**, and 133 within 2 ms.
+
+The timing strongly concentrates the long tail around completion of `AcquireNextFrame`, rather than proving an encoder queue that always requires one more input. A possible explanation is shared DXGI/D3D11/encoder scheduling or synchronization while capture blocks; this trace cannot identify the internal lock or driver mechanism. A later isolated comparison with nonblocking acquisition would test that hypothesis. No such behavior change was made to the live host, and no capture-to-photon latency is measured.
+
+The [metadata summary](host-sparse-input-trace-20260913.json) preserves distributions, counts and correlation criteria. Raw timestamp events remain private; no desktop pixels were retained. The input bridge is developed separately and does not include a speculative capture fix.
