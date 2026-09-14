@@ -49,3 +49,5 @@ In the loopback simulator, two Space and two Tab presses produced four command c
 Reference: Apple's [keyboard navigation guidance](https://developer.apple.com/videos/play/wwdc2021/10260/) describes priority key commands for conflicts with system focus navigation.
 
 Physical build 10 follow-up: Peter reports that Space and Tab still navigate the app controls. The priority-command fix therefore does not resolve the hardware symptom. A diagnostics read after disconnect had reset counters and cannot establish where those presses were intercepted. Checking visionOS Full Keyboard Access is the next diagnostic step: Apple documents Tab/Shift-Tab navigation and Space activation in that mode. Its enabled state has not yet been established.
+
+Peter then confirmed that turning off visionOS Full Keyboard Access makes physical Space and Tab work. This establishes the settings interaction on his headset. Full Keyboard Access enabled remains a compatibility limitation; neither build 9 nor build 10 independently resolved that mode. The launch baseline is physical keyboard with Full Keyboard Access disabled plus the working floating keyboard.
