@@ -118,6 +118,8 @@ internal sealed class HostWindow : Form {
 
     public void Reveal(){Show();WindowState=FormWindowState.Normal;Activate();}
     async Task ConfigureFirewall(){
+        string issue=FirewallPolicy.BlockReason();
+        if(issue!=null){details.Text=issue;return;}
         firewall.Enabled=false;
         try{using(var setup=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"--configure-firewall"){UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden})){
             await Task.Run(()=>setup.WaitForExit());

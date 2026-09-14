@@ -62,7 +62,29 @@ cold relaunch, interruption recovery, active revocation and refused reconnect
 with release visionOS builds 12/13. The simulator required a TLS-opaque relay;
 native Mac discovered the Windows service, while simulator Bonjour was empty.
 No desktop actions or ordinary-desktop images were retained. The final native
-owner-start candidate still requires its coordinated short release-client check.
+owner-start candidate `ca1ea6a` then passed fresh enrollment and **600 decoded
+frames** with release visionOS build 16 in a **10.949-second** bounded phase.
+The client used simulator decoding through the TLS-opaque relay, advertised
+input/text capability, and retained zero input callbacks/ownership. This is not
+a physical decoder or end-to-end latency result.
+
+That final phase initially failed before TLS because two Windows-generated
+Private-profile block rules for the test runtime overrode its narrow allow
+rules. Only those exact task-runtime blocks were temporarily disabled for the
+authorized test; they were restored afterward. The test listener and its allow
+rules were removed, native processes exited, and the sole test device was
+revoked after the bounded operator stopped. The protected store reloaded with
+zero devices. The separate existing lab host was not changed.
+
+The subsequent UI-only firewall fix detects an existing runtime block and asks
+for administrator review instead of overriding it or claiming setup succeeded.
+UI compilation and rule-boundary tests pass. An actual Windows firewall COM
+test returned `configured=false` and setup exit 6 while preserving a deliberately
+created isolated block rule; that test rule was removed afterward. The runtime
+was never executed in that policy test. The two-line UI preflight also avoids
+requesting elevation when this known block prevents setup. These UI changes
+require inclusion in the final signed package; native/transport sources are
+unchanged from the integrated candidate.
 
 ## Unfinished release gates
 
