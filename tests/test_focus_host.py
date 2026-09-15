@@ -107,12 +107,12 @@ class InventoryTests(unittest.TestCase):
         (self.root/'native').mkdir();(self.root/'native'/'focus_bridge.exe').write_bytes(b'NOT EXECUTABLE')
         self.data=dict(version=1,runtimeVersion='6.2.3',managerVersion='6.1.0',reviewed=True,
             mediaSecurity='development-only-unencrypted',manager=self.names[0],clientLibrary=self.names[1],manifest=self.names[2],scene=self.names[4],runtimeConfig=self.names[5],files=files)
-        self.save();self.deployment=FocusDeployment(self.root,True)
+        self.save();self.deployment=FocusDeployment(self.root)
     def save(self): (self.root/'focus'/'deployment.json').write_text(json.dumps(self.data))
     def tearDown(self):self.temp.cleanup()
     def test_matching_inventory_loads_paths_without_execution(self):self.assertEqual(Path(self.deployment.load()['scene']).name,'scene.exe')
-    def test_release_refuses_development_review(self):
-        with self.assertRaises(ValueError):FocusDeployment(self.root,False).load()
+    def test_ordinary_product_loads_reviewed_inventory_without_flags(self):
+        self.assertEqual(Path(FocusDeployment(self.root).load()['scene']).name,'scene.exe')
     def test_unreviewed_or_wrong_version_or_security_fail_closed(self):
         for key,value in [('reviewed',False),('runtimeVersion','6.2.1'),('mediaSecurity','encrypted'),('version',True)]:
             old=self.data[key];self.data[key]=value;self.save()
@@ -159,23 +159,27 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
         self.worker.pause_desktop.assert_not_awaited()
 
-    async def test_focus_from_disabled_does_not_open_desktop_on_return(self):
+    async def test_disabled_access_rejects_local_immersive_without_mutation(self):
         self.worker.enabled=False
-        await self.worker.command({'command':'startFocus'})
-        self.assertTrue(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
-        await self.worker.command({'command':'stopFocus'})
+        before=json.dumps(self.worker.identity.state)
+        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
+        self.worker.pause_desktop.assert_not_awaited()
+        self.assertIsNone(self.worker.focus.adapter);self.assertIsNone(self.worker.focus.token)
+        self.assertIsNone(self.worker.control.listener);self.assertEqual(self.worker.media.mode,'idle')
+        self.assertEqual(before,json.dumps(self.worker.identity.state))
 
     async def test_focus_failure_from_disabled_returns_disabled(self):
         self.worker.enabled=False
         class Bad(Adapter):
             async def start(self,device):raise OSError('fixture')
         self.worker.focus.factory=Bad
-        with self.assertRaises(OSError):await self.worker.command({'command':'startFocus'})
+        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
+        self.assertIsNone(self.worker.focus.adapter)
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
 
-    async def test_repeated_start_preserves_first_focus_from_enabled_and_disabled(self):
-        for previous in (True,False):
+    async def test_repeated_start_preserves_first_focus_from_enabled(self):
+        for previous in (True,):
             self.worker.enabled=previous
             self.worker.start_desktop.reset_mock();self.worker.pause_desktop.reset_mock()
             await self.worker.command({'command':'startFocus'})
@@ -195,8 +199,8 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.worker.enabled,previous)
 
     async def test_focus_child_exit_does_not_enable_previous_disabled_desktop(self):
-        self.worker.enabled=False
         await self.worker.command({'command':'startFocus'})
+        self.worker.enabled=False
         self.worker.focus.adapter.running=False
         await self.worker.health()
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
@@ -220,10 +224,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.worker.command({'command':'startFocus'});await self.worker.command({'command':'stopFocus'})
         self.assertEqual(json.dumps(self.worker.identity.state),before)
 
-    async def test_xr_flag_preserves_consumer_ports(self):
-        worker=Worker(FakeIdentity(),Path('native/capture.exe'),Path('native/input.exe'),lambda x:None,xr_development=True)
+    async def test_normal_product_has_focus_control_without_starting_it(self):
+        worker=Worker(FakeIdentity(),Path('native/capture.exe'),Path('native/input.exe'),lambda x:None)
         self.assertFalse(worker.development);self.assertEqual(worker.stream_port,47991);self.assertEqual(worker.pair_port,47990)
-        self.assertTrue(worker.focus.deployment.development)
+        self.assertIsNotNone(worker.control);self.assertIsNone(worker.control.listener)
+        self.assertFalse(worker.enabled);self.assertIsNone(worker.focus.adapter)
+        self.assertIsNone(worker.stream);self.assertIsNone(worker.pair)
+        self.assertEqual(worker.identity.state['devices'][0]['id'],'a'*32)
 
 
 class DesktopAdapterTests(unittest.IsolatedAsyncioTestCase):

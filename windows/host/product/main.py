@@ -22,7 +22,7 @@ from .focus_control import FocusControl
 
 
 class Worker:
-    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True,focus_deployment=None,focus_factory=None,xr_development=False,focus_control_development=False):
+    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True,focus_deployment=None,focus_factory=None):
         self.identity=identity;self.capture=capture;self.bridge=bridge;self.notify=notify;self.development=development
         self.stream_port=47993 if development else 47991;self.pair_port=47992 if development else 47990
         self.discovery_enabled=discovery;self.discovery=None;self.stream=None;self.stream_task=None
@@ -31,10 +31,9 @@ class Worker:
         self.opening_budget=OpeningBudget()
         self.message='Select a Private network and enable access when you are ready.'
         self.media=MediaOwner();self.encoder='mf';self.nvenc=capture.parent/'capture_nvenc.exe'
-        self.focus=FocusController(self.media,focus_deployment or FocusDeployment(capture.parent.parent,development or xr_development),self.status,
+        self.focus=FocusController(self.media,focus_deployment or FocusDeployment(capture.parent.parent),self.status,
                                    factory=focus_factory or LocalFocus)
-        if focus_control_development and not xr_development:raise ValueError('Focus control requires XR development mode')
-        self.control=FocusControl(self) if focus_control_development else None
+        self.control=FocusControl(self)
 
     def status(self):
         self.notify(dict(event='status',enabled=self.enabled,connected=self.connected,message=self.message,
@@ -169,18 +168,19 @@ class Worker:
             if self.enabled:await self.start()
             else:self.status()
         elif command=='startFocus':
+            if not self.enabled:raise ValueError('Enable access before Immersive Mode.')
             if self.control and self.control.owner:raise ValueError('A remote Focus request owns this session')
             if not self.address:raise ValueError('Select a Private network before Focus')
             previous=self.enabled;prepared=False
             async def prepare_focus():
                 nonlocal prepared
                 await self.pause_desktop()
-                self.focus_previous_enabled=previous;self.enabled=True;prepared=True
+                self.focus_previous_enabled=previous;prepared=True
             try:await self.focus.start(None,prepare_focus,{'_address':self.address,'_notify':self.notify})
             except BaseException:
                 if prepared:await self.restore_focus_access()
                 raise
-            self.message='Focus development window: connect on port 55000. Separate system QR pairing; XR media is not encrypted.';self.status()
+            self.message='Immersive Mode pairing is open. Scan the code with Vision Pro. XR media is not encrypted.';self.status()
         elif command=='focusBarcodeReceipt':
             if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid QR receipt')
             adapter=self.focus.adapter
@@ -238,7 +238,7 @@ class Worker:
             if not self.control or self.control.owner is None:await self.focus.health()
         except OSError:
             await self.restore_focus_access()
-            self.notify(dict(event='error',message='Focus stopped. Your existing pairing is unchanged.'))
+            self.notify(dict(event='error',message='Immersive Mode stopped. Your existing pairing is unchanged.'))
         if self.stream_task and self.stream_task.done():
             task=self.stream_task
             await self.stop()
@@ -252,7 +252,7 @@ class Worker:
             self.notify(dict(event='error',message='The network changed. Select a Private network and enable access again.'))
 
 
-async def run(development,xr_development=False,focus_control_development=False):
+async def run(development):
     loop=asyncio.get_running_loop();commands=asyncio.Queue(maxsize=16);stop=asyncio.Event();output=queue.Queue(maxsize=32)
     def halt():loop.call_soon_threadsafe(stop.set)
     def notify(value):
@@ -283,7 +283,7 @@ async def run(development,xr_development=False,focus_control_development=False):
     worker=None
     try:
         identity=Identity(root)
-        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development,xr_development=xr_development,focus_control_development=focus_control_development)
+        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development)
         worker.status()
         while not stop.is_set():
             try:value=await asyncio.wait_for(commands.get(),.5)
@@ -304,7 +304,5 @@ async def run(development,xr_development=False,focus_control_development=False):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--development',action='store_true')
-    parser.add_argument('--xr-development',action='store_true')
-    parser.add_argument('--focus-control-development',action='store_true')
     args=parser.parse_args()
-    asyncio.run(run(args.development,args.xr_development,args.focus_control_development))
+    asyncio.run(run(args.development))

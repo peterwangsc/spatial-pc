@@ -186,7 +186,7 @@ class LocalFocus:
                 elif not ready:raise ValueError('Focus status before readiness')
         except asyncio.CancelledError:pass
         except (ValueError,OSError,TimeoutError,asyncio.IncompleteReadError):
-            self.notify(dict(event='focusEnded',reason='Local Focus session ended. Pairing is unchanged.'))
+            self.notify(dict(event='focusEnded',reason='Immersive Mode ended. Pairing is unchanged.'))
         finally:
             self.closing=True
             self.invalid=True;self.running=False;self.notify(dict(event='focusBarcodeClosed'))
