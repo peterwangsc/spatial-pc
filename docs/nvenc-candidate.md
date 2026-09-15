@@ -129,8 +129,12 @@ five invalid size/rate cases. The deadline fixture verifies disarming/rearming
 and exit 72 of its own deliberately stalled hidden child. These tests validate
 application ordering; they do not emulate or validate an actual NVIDIA driver.
 
-The System32 version-only query on the existing driver returned maximum 194
-(0xC2, API 12.2), with no encoder session. Hardware H.264/NV12/capability queries,
+Before the driver update, the System32 version-only query on 566.14 returned
+maximum 194 (0xC2, API 12.2), with no encoder session. After the supervised
+616.92 update and reboot on September 15, the unchanged candidate returned
+maximum 209 (0xD1, API 13.1), accepted the required 12.2 function table, and
+reported `system32_only=1 session_opened=0`. This is API loading evidence only;
+the candidate still uses the pinned 12.2 ABI. Hardware H.264/NV12/capability queries,
 actual encode behavior, EOS/cancellation under driver load, and fallback on an
 unsupported adapter still require coordinated hardware validation.
 
