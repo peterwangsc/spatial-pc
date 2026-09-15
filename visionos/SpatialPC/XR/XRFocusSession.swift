@@ -21,14 +21,18 @@ final class XRFocusSession {
         let phase: String
         let stage: String
         let code: Int?
+        let errorDomain: String?
     }
     @ObservationIgnored private var diagnosticEvents: [DiagnosticEvent] = []
     @ObservationIgnored private let diagnosticQueue = DispatchQueue(label: "SpatialPC.immersive-diagnostics", qos: .utility)
 
     // Fixed stage/reason names only: never endpoint, token, QR, or error userInfo.
-    func record(_ event: String, code: Int? = nil) {
+    func record(_ event: String, code: Int? = nil, errorDomain: String? = nil) {
+        let domain = errorDomain.flatMap { value in
+            value.utf8.count <= 96 && value.range(of:"^[A-Za-z0-9_.-]+$",options:.regularExpression) != nil ? value : nil
+        }
         diagnosticEvents.append(DiagnosticEvent(time:Date().timeIntervalSince1970,event:event,
-                                                phase:String(describing:gate.phase),stage:stage,code:code))
+                                                phase:String(describing:gate.phase),stage:stage,code:code,errorDomain:domain))
         if diagnosticEvents.count > 96 { diagnosticEvents.removeFirst(diagnosticEvents.count - 96) }
         let snapshot = diagnosticEvents
         let url = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
@@ -146,7 +150,8 @@ final class XRFocusSession {
                 else if let reason = error as? FoveatedStreamingSession.DisconnectReason { category = "apple." + Self.reasonName(reason) }
                 else if error is FocusControlClient.Failure { category = "control" }
                 else { category = "other" }
-                self.record("connect.error." + category, code:(error as NSError).code)
+                let nsError = error as NSError
+                self.record("connect.error." + category, code:nsError.code,errorDomain:nsError.domain)
                 if !Task.isCancelled { self.validationError = Self.message(for:error) }
                 throw error
             }
