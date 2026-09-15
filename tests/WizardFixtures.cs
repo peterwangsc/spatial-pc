@@ -19,7 +19,7 @@ internal static class WizardFixtures {
             "focus",D("state","idle","configured",false,"available",false));
     }
     static HostWindow Ready(){var w=HostWindow.CreateFixture();w.FixtureReceive(Status(true));return w;}
-    static void BeginCode(HostWindow w,int seconds=179){w.FixtureAct("pair").GetAwaiter().GetResult();w.FixtureReceive(D("event","pairingCode","code","0123","expiresSeconds",seconds));}
+    static void BeginCode(HostWindow w,int seconds=179){w.FixtureAct("pair").GetAwaiter().GetResult();w.FixtureReceive(D("event","pairingCode","code","1234","expiresSeconds",seconds));}
     static Dictionary<string,object> Approval(){return D("event","approval","requestId",new string('b',32),"name","Example Vision Pro","expiresSeconds",45);}
     static void Snapshot(HostWindow w,string name,float scale=1){
         var v=w.FixtureView;w.Controls.Remove(v);v.Dock=DockStyle.None;v.AutoScaleMode=AutoScaleMode.None;v.FixtureScale=scale;
@@ -28,7 +28,7 @@ internal static class WizardFixtures {
         v.Size=new Size((int)(600*scale),(int)(650*scale));v.CreateControl();foreach(var c in all)c.CreateControl();v.PerformLayout();
         Check(v.Title.Right<=v.Width&&v.Secondary.Bottom<=v.Height,"controls within view");
         if(v.Qr.Image!=null)Check(v.Qr.Bottom<=v.Primary.Top-8*scale,"QR action spacing");
-        if(v.Code.Text.Length!=0){Check(v.Code.Font.Size>=56*scale,"code is dominant");Check(v.Code.Text=="0123","leading zero preserved");}
+        if(v.Code.Text.Length!=0){Check(v.Code.Font.Size>=56*scale,"code is dominant");Check(v.Code.Text=="1234","only public visual fixture digits");}
         using(var bitmap=new Bitmap(v.Width,v.Height)){v.DrawToBitmap(bitmap,new Rectangle(Point.Empty,v.Size));bitmap.Save(Path.Combine(output,name+".png"),ImageFormat.Png);}
         v.Dispose();w.FixtureDispose();
     }
@@ -41,6 +41,7 @@ internal static class WizardFixtures {
             w=Ready();Snapshot(w,"03-pair");
             w=Ready();BeginCode(w);Check(!w.FixtureView.Settings.Enabled,"no hiding active code in settings");Snapshot(w,"04-code");
             w=Ready();BeginCode(w);Snapshot(w,"04-code-150",1.5f);
+            w=Ready();BeginCode(w);w.FixtureReceive(D("event","pairingCode","code","0123","expiresSeconds",179));Check(w.FixtureView.Code.Text=="0123","leading zero preserved without screenshot");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());Check(w.FixtureView.Code.Text=="","approval clears code");Check(w.FixtureView.Detail.Text.Contains("View and control this PC."),"consent retained");Snapshot(w,"05-approval");
             w=Ready();BeginCode(w);var longApproval=Approval();longApproval["name"]=new string('W',80);w.FixtureReceive(longApproval);Snapshot(w,"05-approval-long-150",1.5f);
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());w.FixtureAct("allow").GetAwaiter().GetResult();w.FixtureAct("allow").GetAwaiter().GetResult();

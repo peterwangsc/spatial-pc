@@ -13,11 +13,11 @@ Backend, native binaries, SPP2, identity, leases, firewall policy and stream pro
 - Production UI build: `windows\ui\build.cmd`.
 - Fixture build: `tests\build-wizard-fixtures.cmd`; fixture entry points exist only with `UI_FIXTURE` and are not compiled into the product build.
 - Fixture execution: `.local\wizard-fixtures\WizardFixtures.exe .local\wizard-fixtures\evidence` with the already-reviewed QRCoder 1.6.0 DLL beside the fixture executable. `FocusQr` verifies its existing SHA256 before loading it.
-- 59 assertions passed across actual UI event handling and passive view layout. Covers approval consent/ID/single use/expiry, cancellation and late approval, expiry/reopen ordering, success after pairingClosed/status, error visibility, sensitive-content clearing, stale QR generation events, canceled QR admission and fresh-generation reentry, modal revoke selection changes/disappearance, and absence of development controls in consumer settings.
+- 60 assertions passed across actual UI event handling and passive view layout. Covers approval consent/ID/single use/expiry, cancellation and late approval, expiry/reopen ordering, success after pairingClosed/status, error visibility, sensitive-content clearing, stale QR generation events, canceled QR admission and fresh-generation reentry, modal revoke selection changes/disappearance, leading zeros, and absence of development controls in consumer settings.
 - `DrawToBitmap` generated 13 fixture views without showing or activating a window. No backend, identity store, registry preference, network listener, screen capture, mouse/keyboard automation or native media process is used by the fixture path.
 - Visual review covered code, consent, Settings, Apple QR, recovery and long names. Primary buttons are 268×48 logical pixels; text and bounds scale with DPI. The 150% images are deliberate enlarged-layout/font fixtures, not proof of a physical monitor DPI transition.
 
-All pictured data is public fixture data: `0123`, `Example Vision Pro`, documentation address `192.0.2.10`, and a QR payload explicitly labeled `PUBLIC-FIXTURE-NOT-A-CREDENTIAL`. That QR cannot enroll a device. No real pairing code, QR credential or screenshot of Peter's desktop is included.
+All pictured data is public fixture data: `1234`, `Example Vision Pro`, documentation address `192.0.2.10`, and a QR payload explicitly labeled `PUBLIC-FIXTURE-NOT-A-CREDENTIAL`. That QR cannot enroll a device. No real pairing code, QR credential or screenshot of Peter's desktop is included. The display-only digit boxes use GolfCore CodeInput's separate rounded boxes, neutral borders and equal spacing, enlarged for Windows; no input glow is shown.
 
 ![Four-digit pairing stage](ui/windows-wizard/code.png)
 

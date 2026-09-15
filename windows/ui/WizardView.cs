@@ -7,12 +7,12 @@ internal sealed class PairingCodeLabel : Label {
     protected override void OnPaint(PaintEventArgs e) {
         e.Graphics.Clear(BackColor);if(Text.Length!=4)return;
         float scale=Font.Size/56f*e.Graphics.DpiX/96f;int gap=(int)(12*scale),card=Math.Min((int)(86*scale),(Width-3*gap)/4),height=(int)(108*scale);
-        int left=(Width-4*card-3*gap)/2,top=(Height-height)/2,radius=(int)(12*scale);
+        int left=(Width-4*card-3*gap)/2,top=(Height-height)/2,radius=(int)(14*scale);
         e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         for(int i=0;i<4;i++){
             var box=new Rectangle(left+i*(card+gap),top,card,height);
-            using(var path=new GraphicsPath())using(var fill=new SolidBrush(Color.FromArgb(242,245,249))){
-                int d=radius*2;path.AddArc(box.Left,box.Top,d,d,180,90);path.AddArc(box.Right-d,box.Top,d,d,270,90);path.AddArc(box.Right-d,box.Bottom-d,d,d,0,90);path.AddArc(box.Left,box.Bottom-d,d,d,90,90);path.CloseFigure();e.Graphics.FillPath(fill,path);
+            using(var path=new GraphicsPath())using(var fill=new SolidBrush(Color.FromArgb(242,245,249)))using(var border=new Pen(Color.FromArgb(215,223,234),1.5f*scale)){
+                int d=radius*2;path.AddArc(box.Left,box.Top,d,d,180,90);path.AddArc(box.Right-d,box.Top,d,d,270,90);path.AddArc(box.Right-d,box.Bottom-d,d,d,0,90);path.AddArc(box.Left,box.Bottom-d,d,d,90,90);path.CloseFigure();e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(border,path);
             }
             TextRenderer.DrawText(e.Graphics,Text[i].ToString(),Font,box,ForeColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding);
         }
