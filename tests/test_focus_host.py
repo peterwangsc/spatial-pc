@@ -107,12 +107,12 @@ class InventoryTests(unittest.TestCase):
         (self.root/'native').mkdir();(self.root/'native'/'focus_bridge.exe').write_bytes(b'NOT EXECUTABLE')
         self.data=dict(version=1,runtimeVersion='6.2.3',managerVersion='6.1.0',reviewed=True,
             mediaSecurity='development-only-unencrypted',manager=self.names[0],clientLibrary=self.names[1],manifest=self.names[2],scene=self.names[4],runtimeConfig=self.names[5],files=files)
-        self.save();self.deployment=FocusDeployment(self.root,True)
+        self.save();self.deployment=FocusDeployment(self.root)
     def save(self): (self.root/'focus'/'deployment.json').write_text(json.dumps(self.data))
     def tearDown(self):self.temp.cleanup()
     def test_matching_inventory_loads_paths_without_execution(self):self.assertEqual(Path(self.deployment.load()['scene']).name,'scene.exe')
-    def test_release_refuses_development_review(self):
-        with self.assertRaises(ValueError):FocusDeployment(self.root,False).load()
+    def test_ordinary_product_loads_reviewed_inventory_without_flags(self):
+        self.assertEqual(Path(FocusDeployment(self.root).load()['scene']).name,'scene.exe')
     def test_unreviewed_or_wrong_version_or_security_fail_closed(self):
         for key,value in [('reviewed',False),('runtimeVersion','6.2.1'),('mediaSecurity','encrypted'),('version',True)]:
             old=self.data[key];self.data[key]=value;self.save()
@@ -220,10 +220,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.worker.command({'command':'startFocus'});await self.worker.command({'command':'stopFocus'})
         self.assertEqual(json.dumps(self.worker.identity.state),before)
 
-    async def test_xr_flag_preserves_consumer_ports(self):
-        worker=Worker(FakeIdentity(),Path('native/capture.exe'),Path('native/input.exe'),lambda x:None,xr_development=True)
+    async def test_normal_product_has_focus_control_without_starting_it(self):
+        worker=Worker(FakeIdentity(),Path('native/capture.exe'),Path('native/input.exe'),lambda x:None)
         self.assertFalse(worker.development);self.assertEqual(worker.stream_port,47991);self.assertEqual(worker.pair_port,47990)
-        self.assertTrue(worker.focus.deployment.development)
+        self.assertIsNotNone(worker.control);self.assertIsNone(worker.control.listener)
+        self.assertFalse(worker.enabled);self.assertIsNone(worker.focus.adapter)
+        self.assertIsNone(worker.stream);self.assertIsNone(worker.pair)
+        self.assertEqual(worker.identity.state['devices'][0]['id'],'a'*32)
 
 
 class DesktopAdapterTests(unittest.IsolatedAsyncioTestCase):

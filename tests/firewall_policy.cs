@@ -19,6 +19,11 @@ internal static class FirewallPolicyTests {
         rule.Protocol=17;Check(FirewallPolicy.BlocksRuntime(rule,runtime));
         rule.Protocol=256;Check(FirewallPolicy.BlocksRuntime(rule,runtime));
         rule.Protocol=1;Check(!FirewallPolicy.BlocksRuntime(rule,runtime));
+        var specs=FirewallPolicy.ProductRules("C:\\Spatial PC");Check(specs.Length==4);
+        Check(specs[0].Program==runtime&&specs[0].Protocol==6&&specs[0].Ports=="47990,47991,47994,55000");
+        Check(specs[1].Program==runtime&&specs[1].Protocol==17&&specs[1].Ports=="5353");
+        Check(specs[2].Program=="C:\\Spatial PC\\focus\\CloudXrService.exe"&&specs[2].Protocol==6&&specs[2].Ports=="48322");
+        Check(specs[3].Program==specs[2].Program&&specs[3].Protocol==17&&specs[3].Ports=="47998,47999,48005,48008,48012");
         Console.WriteLine("PASS: program, direction, profile, protocol and explicit block detection; no firewall rules changed");return 0;
     }
 }

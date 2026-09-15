@@ -1,6 +1,6 @@
-"""Optional Focus lifecycle inside the existing host. No new network protocol.
+"""On-demand Focus lifecycle inside the existing host. No new network protocol.
 
-Only local approved development configuration can instantiate the native adapter.
+Only verified local runtime inventory can instantiate the native adapter.
 CloudXR credentials stay inside the private adapter/control owner, never status.
 """
 import asyncio
@@ -16,13 +16,13 @@ from input_server import close_child
 
 
 class FocusDeployment:
-    def __init__(self,root,development=False):
-        self.root=Path(root).resolve();self.development=development
+    def __init__(self,root):
+        self.root=Path(root).resolve()
 
     def load(self):
         path=self.root/'focus'/'deployment.json'
-        if not self.development or not path.is_file() or path.stat().st_size>32768:
-            raise ValueError('Focus development artifacts are not configured')
+        if not path.is_file() or path.stat().st_size>32768:
+            raise ValueError('Focus runtime is missing. Repair the Spatial PC installation.')
         def unique(pairs):
             result={}
             for k,v in pairs:

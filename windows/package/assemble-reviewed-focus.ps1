@@ -46,6 +46,7 @@ try {
     } finally {Pop-Location}
     New-Item -ItemType Directory -Path $candidate | Out-Null
     foreach($entry in $baseline.files){
+        if($entry.path -in @('development-defaults.json','SpatialPC.previous-ui.exe')){continue}
         $destination=Join-Path $candidate $entry.path
         New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $base $entry.path) -Destination $destination
@@ -58,13 +59,9 @@ try {
         Copy-Item -LiteralPath (Join-Path $export ('windows/host/'+$name)) -Destination (Join-Path $candidate ('host/'+$name))
     }
     # Import/deployment hash verification only; no Worker/Identity construction.
-    & (Join-Path $candidate 'runtime/python.exe') -I -B -c 'import pathlib,product.main,product.focus_control;from product.focus import FocusDeployment;p=pathlib.Path(product.main.__file__).resolve().parents[2];FocusDeployment(p,True).load()'
+    & (Join-Path $candidate 'runtime/python.exe') -I -B -c 'import pathlib,product.main,product.focus_control;from product.focus import FocusDeployment;p=pathlib.Path(product.main.__file__).resolve().parents[2];FocusDeployment(p).load()'
     if($LASTEXITCODE -ne 0){throw 'Assembled import/inventory validation failed'}
     Write-Output 'Reviewed module/import and deployment inventory PASS; no host started'
-    # This vendor-equipped development package exposes both Focus capabilities
-    # on ordinary shortcut/relaunch; the host still gates access and each session.
-    $defaults=[ordered]@{version=1;focusEnabled=$true;deploymentSha256=$DeploymentSha256}
-    [IO.File]::WriteAllText((Join-Path $candidate 'development-defaults.json'),($defaults|ConvertTo-Json),(New-Object Text.UTF8Encoding $false))
     $files=@(Get-ChildItem -LiteralPath $candidate -Recurse -File | Sort-Object FullName | ForEach-Object {
         [ordered]@{path=$_.FullName.Substring($candidate.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()}
     })
@@ -81,7 +78,7 @@ try {
     $readiness=[ordered]@{utc=[DateTime]::UtcNow.ToString('o');candidate=$candidate;sourceCommit=$SourceCommit;fileCount=$files.Count;
         bytes=($files|ForEach-Object {$_['bytes']}|Measure-Object -Sum).Sum;manifestSha256=(Get-FileHash -LiteralPath (Join-Path $candidate 'bundle-manifest.json')).Hash.ToLowerInvariant();
         uiSha256=(Get-FileHash -LiteralPath (Join-Path $candidate 'SpatialPC.exe')).Hash.ToLowerInvariant();deploymentSha256=$DeploymentSha256;
-        launchArguments=@();developmentDefaults=$true;controlPort=47994;appleLocalPort=55000;signalingPort=48322;
+        launchArguments=@();controlPort=47994;appleLocalPort=55000;signalingPort=48322;
         listenerStarted=$false;installed=$false;identityAccessed=$false;firewallChanged=$false;mediaSecurity='development-only-unencrypted';consumerReady=$false}
     [IO.File]::WriteAllText(($candidate+'-readiness.json'),($readiness|ConvertTo-Json -Depth 5),$utf8)
     $readiness|ConvertTo-Json -Depth 5

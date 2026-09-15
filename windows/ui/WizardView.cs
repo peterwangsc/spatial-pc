@@ -45,7 +45,7 @@ internal sealed class WizardView : UserControl {
     internal float FixtureScale=0;
 #endif
 
-    internal WizardView(bool development) {
+    internal WizardView() {
         Dock=DockStyle.Fill;BackColor=Color.White;Font=new Font("Segoe UI",11);AutoScaleMode=AutoScaleMode.Dpi;
         brand.Text="Spatial PC";brand.Font=new Font("Segoe UI",15,FontStyle.Bold);brand.AutoSize=true;Controls.Add(brand);
         Style(Settings,false);Settings.Text="Settings";Controls.Add(Settings);
@@ -65,10 +65,10 @@ internal sealed class WizardView : UserControl {
         AddSettingLabel("Paired devices");Devices.View=View.Details;Devices.HeaderStyle=ColumnHeaderStyle.None;Devices.FullRowSelect=true;Devices.MultiSelect=false;Devices.HideSelection=false;Devices.Width=440;Devices.Height=94;Devices.Columns.Add("Device",410);Devices.AccessibleName="Paired devices";settingsPage.Controls.Add(Devices);
         Style(Revoke,false);Revoke.Text="Revoke device";Revoke.Enabled=false;Revoke.Width=240;settingsPage.Controls.Add(Revoke);
         Startup.Text="Open at sign-in";Startup.AutoSize=true;Startup.Margin=new Padding(0,18,0,14);settingsPage.Controls.Add(Startup);
-        if(development) {
-            AddSettingLabel("Development");Encoder.DropDownStyle=ComboBoxStyle.DropDownList;Encoder.Width=300;Encoder.AccessibleName="Desktop encoder";
+        {
+            AddSettingLabel("Focus");Encoder.DropDownStyle=ComboBoxStyle.DropDownList;Encoder.Width=300;Encoder.AccessibleName="Desktop encoder";
             Encoder.Items.AddRange(new object[]{"Media Foundation","NVENC (preview)"});Encoder.SelectedIndex=0;settingsPage.Controls.Add(Encoder);
-            Style(StartFocus,false);StartFocus.Text="Start XR Focus";StartFocus.Width=240;settingsPage.Controls.Add(StartFocus);
+            Style(StartFocus,false);StartFocus.Text="Start Focus";StartFocus.Width=240;settingsPage.Controls.Add(StartFocus);
             Style(StopFocus,false);StopFocus.Text="Stop XR Focus";StopFocus.Width=240;settingsPage.Controls.Add(StopFocus);
             FocusStatus.AutoSize=true;FocusStatus.MaximumSize=new Size(440,0);settingsPage.Controls.Add(FocusStatus);
         }
