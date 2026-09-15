@@ -66,10 +66,10 @@ internal sealed class WizardView : UserControl {
         Style(Revoke,false);Revoke.Text="Revoke device";Revoke.Enabled=false;Revoke.Width=240;settingsPage.Controls.Add(Revoke);
         Startup.Text="Open at sign-in";Startup.AutoSize=true;Startup.Margin=new Padding(0,18,0,14);settingsPage.Controls.Add(Startup);
         {
-            AddSettingLabel("Focus");Encoder.DropDownStyle=ComboBoxStyle.DropDownList;Encoder.Width=300;Encoder.AccessibleName="Desktop encoder";
+            AddSettingLabel("Immersive Mode");Encoder.DropDownStyle=ComboBoxStyle.DropDownList;Encoder.Width=300;Encoder.AccessibleName="Desktop encoder";
             Encoder.Items.AddRange(new object[]{"Media Foundation","NVENC (preview)"});Encoder.SelectedIndex=0;settingsPage.Controls.Add(Encoder);
-            Style(StartFocus,false);StartFocus.Text="Start Focus";StartFocus.Width=240;settingsPage.Controls.Add(StartFocus);
-            Style(StopFocus,false);StopFocus.Text="Stop XR Focus";StopFocus.Width=240;settingsPage.Controls.Add(StopFocus);
+            Style(StartFocus,false);StartFocus.Text="Start Immersive Mode";StartFocus.Width=240;settingsPage.Controls.Add(StartFocus);
+            Style(StopFocus,false);StopFocus.Text="Stop Immersive Mode";StopFocus.Width=240;settingsPage.Controls.Add(StopFocus);
             FocusStatus.AutoSize=true;FocusStatus.MaximumSize=new Size(440,0);settingsPage.Controls.Add(FocusStatus);
         }
         Style(Quit,false);Quit.Text="Quit Spatial PC";Quit.Width=240;Quit.Margin=new Padding(0,20,0,0);settingsPage.Controls.Add(Quit);

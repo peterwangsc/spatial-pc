@@ -55,6 +55,8 @@ internal static class WizardFixtures {
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());w.FixtureAct("deny").GetAwaiter().GetResult();w.FixtureReceive(D("event","pairingAttemptFailed","attemptsRemaining",2));Check(w.FixtureView.Title.Text=="Canceling…","denial is not an error");w.FixtureReceive(D("event","pairingClosed"));Check(w.FixtureView.Title.Text=="Pair your Vision Pro","denial returns to pair");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureExpiry();int requests=w.FixtureCommands.Count;w.FixtureAct("back").GetAwaiter().GetResult();w.FixtureAct("pair").GetAwaiter().GetResult();Check(w.FixtureCommands.Count==requests,"expiry cannot reopen before close acknowledgement");w.FixtureReceive(D("event","pairingClosed"));w.FixtureAct("pair").GetAwaiter().GetResult();Check(w.FixtureCommands.Count==requests+1,"new pair allowed after close acknowledgement");w.FixtureDispose();
             w=Ready();w.FixtureView.ShowSettings(true);w.FixtureReceive(D("event","error","message","Public fixture recovery"));Check(!w.FixtureView.InSettings,"errors visible from settings");w.FixtureDispose();
+            w=HostWindow.CreateFixture();w.FixtureReceive(Status(false));w.FixtureBeginFocus();Check(!w.FixtureCommands.Any(c=>(string)c["command"]=="startFocus"),"disabled access cannot start Immersive Mode");w.FixtureDispose();
+            w=Ready();w.FixtureNetworkSetup();w.FixtureBeginFocus();Check(!w.FixtureCommands.Any(c=>(string)c["command"]=="startFocus"),"missing network policy cannot start Immersive Mode");w.FixtureDispose();
             w=Ready();Check(w.FixtureView.StartFocus.Parent!=null&&w.FixtureView.FocusStatus.Parent!=null,"Focus is visible in ordinary settings without flags");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());w.FixtureExpiry();Check(w.FixtureCommands.Any(c=>(string)c["command"]=="approve"&&!(bool)c["accepted"]),"expired approval denied");Check(w.FixtureView.Primary.Text!="Allow this device","expired approval cannot allow");Snapshot(w,"11-expired");
             w=Ready();BeginCode(w);w.FixtureHide();Check(w.FixtureView.Code.Text=="","hiding window clears code");Check(w.FixtureCommands.Any(c=>(string)c["command"]=="cancelPairing"),"hiding cancels pairing");w.FixtureDispose();
@@ -79,7 +81,7 @@ internal static class WizardFixtures {
             w.FixtureReceive(D("event","focusPermission","requestId","public-visual","name","Example Vision Pro","expiresSeconds",60));Snapshot(w,"12-focus-permission");
             w=HostWindow.CreateFixture();w.FixtureReceive(Status(true,1));
             w.FixtureReceive(D("event","focusPermission","requestId","public-permission","name","Example Vision Pro","expiresSeconds",60));
-            Check(w.FixtureView.Title.Text=="Allow Focus?","Focus permission is explicit");
+            Check(w.FixtureView.Title.Text=="Allow Immersive Mode?","Immersive Mode permission is explicit");
             w.FixtureAct("allowFocus").GetAwaiter().GetResult();w.FixtureAct("allowFocus").GetAwaiter().GetResult();
             Check(w.FixtureCommands.Count(c=>(string)c["command"]=="focusPermissionDecision")==1,"Focus permission single decision");
             Check((bool)w.FixtureCommands.Last()["accepted"],"Focus local approval true");w.FixtureDispose();

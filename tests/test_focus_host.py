@@ -159,23 +159,27 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
         self.worker.pause_desktop.assert_not_awaited()
 
-    async def test_focus_from_disabled_does_not_open_desktop_on_return(self):
+    async def test_disabled_access_rejects_local_immersive_without_mutation(self):
         self.worker.enabled=False
-        await self.worker.command({'command':'startFocus'})
-        self.assertTrue(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
-        await self.worker.command({'command':'stopFocus'})
+        before=json.dumps(self.worker.identity.state)
+        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
+        self.worker.pause_desktop.assert_not_awaited()
+        self.assertIsNone(self.worker.focus.adapter);self.assertIsNone(self.worker.focus.token)
+        self.assertIsNone(self.worker.control.listener);self.assertEqual(self.worker.media.mode,'idle')
+        self.assertEqual(before,json.dumps(self.worker.identity.state))
 
     async def test_focus_failure_from_disabled_returns_disabled(self):
         self.worker.enabled=False
         class Bad(Adapter):
             async def start(self,device):raise OSError('fixture')
         self.worker.focus.factory=Bad
-        with self.assertRaises(OSError):await self.worker.command({'command':'startFocus'})
+        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
+        self.assertIsNone(self.worker.focus.adapter)
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
 
-    async def test_repeated_start_preserves_first_focus_from_enabled_and_disabled(self):
-        for previous in (True,False):
+    async def test_repeated_start_preserves_first_focus_from_enabled(self):
+        for previous in (True,):
             self.worker.enabled=previous
             self.worker.start_desktop.reset_mock();self.worker.pause_desktop.reset_mock()
             await self.worker.command({'command':'startFocus'})
@@ -195,8 +199,8 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.worker.enabled,previous)
 
     async def test_focus_child_exit_does_not_enable_previous_disabled_desktop(self):
-        self.worker.enabled=False
         await self.worker.command({'command':'startFocus'})
+        self.worker.enabled=False
         self.worker.focus.adapter.running=False
         await self.worker.health()
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()

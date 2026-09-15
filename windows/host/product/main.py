@@ -168,18 +168,19 @@ class Worker:
             if self.enabled:await self.start()
             else:self.status()
         elif command=='startFocus':
+            if not self.enabled:raise ValueError('Enable access before Immersive Mode.')
             if self.control and self.control.owner:raise ValueError('A remote Focus request owns this session')
             if not self.address:raise ValueError('Select a Private network before Focus')
             previous=self.enabled;prepared=False
             async def prepare_focus():
                 nonlocal prepared
                 await self.pause_desktop()
-                self.focus_previous_enabled=previous;self.enabled=True;prepared=True
+                self.focus_previous_enabled=previous;prepared=True
             try:await self.focus.start(None,prepare_focus,{'_address':self.address,'_notify':self.notify})
             except BaseException:
                 if prepared:await self.restore_focus_access()
                 raise
-            self.message='Focus development window: connect on port 55000. Separate system QR pairing; XR media is not encrypted.';self.status()
+            self.message='Immersive Mode pairing is open. Scan the code with Vision Pro. XR media is not encrypted.';self.status()
         elif command=='focusBarcodeReceipt':
             if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid QR receipt')
             adapter=self.focus.adapter
@@ -237,7 +238,7 @@ class Worker:
             if not self.control or self.control.owner is None:await self.focus.health()
         except OSError:
             await self.restore_focus_access()
-            self.notify(dict(event='error',message='Focus stopped. Your existing pairing is unchanged.'))
+            self.notify(dict(event='error',message='Immersive Mode stopped. Your existing pairing is unchanged.'))
         if self.stream_task and self.stream_task.done():
             task=self.stream_task
             await self.stop()

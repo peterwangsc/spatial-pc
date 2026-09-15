@@ -48,7 +48,7 @@ internal sealed class HostWindow : Form {
         if(!fixture)using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))view.Startup.Checked=key!=null&&String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase);
         view.Startup.CheckedChanged+=(s,e)=>SetStartup();view.Quit.Click+=async(s,e)=>await Quit();
         view.Encoder.SelectedIndexChanged+=(s,e)=>{if(!receivingStatus)Send("desktopEncoder","value",view.Encoder.SelectedIndex==1?"nvenc":"mf");};
-        view.StartFocus.Click+=(s,e)=>{if(MessageBox.Show(this,"Open Focus pairing for three minutes? Vision Pro uses separate system QR pairing. XR media is not encrypted. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes)BeginFocus();};
+        view.StartFocus.Click+=(s,e)=>{if(MessageBox.Show(this,"Open Immersive Mode pairing for three minutes? Vision Pro uses separate system QR pairing. XR media is not encrypted. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes)BeginFocus();};
         view.StopFocus.Click+=(s,e)=>StopFocus();
         tray.Icon=Icon;tray.Text="Spatial PC — access disabled";tray.Visible=!fixture;tray.DoubleClick+=(s,e)=>Reveal();
         var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>{InvalidateFocus();Send("enable","value",false);});menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
@@ -62,7 +62,7 @@ internal sealed class HostWindow : Form {
         var selected=view.Devices.SelectedItems[0];string id=Convert.ToString(selected.Tag),name=selected.Text;
         if(confirm(id,name)&&view.Devices.Items.Cast<ListViewItem>().Any(row=>Convert.ToString(row.Tag)==id)){if(focusActive||focusQrAllowed)InvalidateFocus();Send("revoke","deviceId",id);}
     }
-    void BeginFocus(){if(focusStopping||focusActive||focusQrAllowed)return;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;focusGeneration=null;focusQrAllowed=true;view.StartFocus.Enabled=false;Send("startFocus");view.ShowSettings(false);Render();}
+    void BeginFocus(){if(!enabled||!networkReady||!firewallReady||focusStopping||focusActive||focusQrAllowed)return;if(!fixture&&!development&&!FirewallPolicy.Configured()){Fail(FirewallPolicy.BlockReason()??"Set up network access in Settings.");return;}if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;focusGeneration=null;focusQrAllowed=true;view.StartFocus.Enabled=false;Send("startFocus");view.ShowSettings(false);Render();}
     void InvalidateFocus(){focusQrAllowed=false;focusStopping=true;view.StartFocus.Enabled=false;if(focusGeneration!=null||authorizedFocusGeneration!=null)retiredFocusGeneration=focusGeneration??authorizedFocusGeneration;authorizedFocusGeneration=null;ClearFocusQr();}
     void StopFocus(){InvalidateFocus();Send("stopFocus");Send("status");Render();}
     void CancelSensitive(){if(focusPermissionId!=null)FocusPermission(false);if(focusBitmap!=null||focusQrAllowed)StopFocus();if(pairingExpected){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";}Render();}
@@ -97,7 +97,7 @@ internal sealed class HostWindow : Form {
     void Render(){
         var page=new WizardPage();primaryAction="";secondaryAction="";
         if(focusBitmap!=null){page.Title="Scan with Vision Pro";page.Qr=focusBitmap;page.Sensitive=true;page.Secondary="Cancel";secondaryAction="stopFocus";}
-        else if(focusPermissionId!=null){page.Title="Allow Focus?";page.Detail=focusPermissionName+"\nUses separate Apple pairing.\nXR media is not encrypted.";page.Primary="Allow Focus";primaryAction="allowFocus";page.Secondary="Deny";secondaryAction="denyFocus";page.Sensitive=true;}
+        else if(focusPermissionId!=null){page.Title="Allow Immersive Mode?";page.Detail=focusPermissionName+"\nUses separate Apple pairing.\nXR media is not encrypted.";page.Primary="Allow Immersive Mode";primaryAction="allowFocus";page.Secondary="Deny";secondaryAction="denyFocus";page.Sensitive=true;}
         else if(requestId!=null){page.Title="Allow this device?";page.Detail=requestName+"\nView and control this PC.";page.Sensitive=true;page.Primary="Allow this device";primaryAction="allow";page.Secondary="Deny";secondaryAction="deny";}
         else if(pairCode.Length!=0){page.Title="Enter on Vision Pro";page.Code=pairCode;page.Sensitive=true;int remaining=Math.Max(0,(int)(pairingUntil-DateTime.UtcNow).TotalSeconds);page.Footnote=attemptNote.Length!=0?attemptNote:"Expires in "+remaining/60+":"+(remaining%60).ToString("00");page.Secondary="Cancel";secondaryAction="cancel";}
         else if(error.Length!=0){page.Title="Couldn’t finish";page.Detail=error;page.Primary=worker!=null&&worker.HasExited?"Quit Spatial PC":"Back";primaryAction=page.Primary=="Back"?"back":"quit";}
@@ -106,7 +106,7 @@ internal sealed class HostWindow : Form {
         else if(!firewallReady){page.Title="Set up your PC";page.Detail="Allow Spatial PC on your Private network.";page.Primary="Set up network";primaryAction="setup";}
         else if(view.Network.Items.Count==0){page.Title="Choose a Private network";page.Detail="Set your network to Private in Windows Settings.";page.Primary="Check again";primaryAction="refresh";}
         else if(!configured||!networkReady){page.Title="Getting ready…";}
-        else if(focusActive){page.Title="Focus session";page.Primary="Stop Focus";primaryAction="stopFocus";}
+        else if(focusActive){page.Title="Immersive Mode session";page.Primary="Stop Immersive Mode";primaryAction="stopFocus";}
         else if(!enabled){page.Title="Access is off";page.Detail="Allow paired devices to view and control this PC.";page.Primary="Enable access";primaryAction="enable";}
         else if(connected.Length!=0){page.Title="Connected";page.Detail=connected;}
         else{page.Title=deviceCount==0?"Pair your Vision Pro":"Ready";page.Detail=deviceCount==0?"":"Connect from Vision Pro";page.Primary="Pair a new device";primaryAction="pair";}
@@ -159,7 +159,7 @@ internal sealed class HostWindow : Form {
             if(!focusQrAllowed||focusStopping||incoming==retiredFocusGeneration||focusGeneration!=null||(authorizedFocusGeneration!=null&&incoming!=authorizedFocusGeneration)){if(!focusQrAllowed||focusStopping)retiredFocusGeneration=incoming;return;}
             ClearFocusQr();string payload=json.Serialize(new Dictionary<string,object>{{"token",value["token"]},{"digest",value["digest"]}});focusBitmap=FocusQr.Render(payload);payload=null;focusGeneration=incoming;
             ClearPairing();view.ShowSettings(false);Render();Reveal();view.Refresh();presented=Visible&&view.Qr.Visible&&view.Qr.Image!=null;
-        }catch(Exception){InvalidateFocus();Fail("QR code unavailable. Try Focus again.");}
+        }catch(Exception){InvalidateFocus();Fail("QR code unavailable. Try Immersive Mode again.");}
         finally{value.Remove("token");value.Remove("digest");SendObject(new Dictionary<string,object>{{"command","focusBarcodeReceipt"},{"requestId",value["requestId"]},{"accepted",presented}});}
     }
     void Receive(Dictionary<string,object> value){
@@ -170,7 +170,7 @@ internal sealed class HostWindow : Form {
                 string mode=value.ContainsKey("mediaMode")?Convert.ToString(value["mediaMode"]):"idle";focusActive=mode=="focus";
                 view.Encoder.Enabled=mode=="idle"&&value.ContainsKey("nvencConfigured")&&Convert.ToBoolean(value["nvencConfigured"]);
                 if(view.Encoder.Items.Count>0)view.Encoder.SelectedIndex=value.ContainsKey("desktopEncoder")&&Convert.ToString(value["desktopEncoder"])=="nvenc"?1:0;
-                if(value.ContainsKey("focus")){var caps=(Dictionary<string,object>)value["focus"];string phase=Convert.ToString(caps["state"]);if(mode=="idle"&&phase=="idle"&&focusStopping)focusStopping=false;view.StartFocus.Enabled=Convert.ToBoolean(caps["available"])&&view.Network.SelectedItem!=null&&!focusStopping&&!focusQrAllowed;view.StopFocus.Enabled=phase=="starting"||phase=="ready";view.FocusStatus.Text=Convert.ToBoolean(caps["configured"])?"Focus: "+phase:"Focus runtime missing or invalid. Repair Spatial PC to use Focus.";}
+                if(value.ContainsKey("focus")){var caps=(Dictionary<string,object>)value["focus"];string phase=Convert.ToString(caps["state"]);if(mode=="idle"&&phase=="idle"&&focusStopping)focusStopping=false;view.StartFocus.Enabled=Convert.ToBoolean(caps["available"])&&Convert.ToBoolean(value["enabled"])&&!Convert.ToBoolean(value["needsNetwork"])&&firewallReady&&view.Network.SelectedItem!=null&&!focusStopping&&!focusQrAllowed;view.StopFocus.Enabled=phase=="starting"||phase=="ready";view.FocusStatus.Text=Convert.ToBoolean(caps["configured"])?"Immersive Mode: "+phase:"Immersive Mode runtime missing or invalid. Repair Spatial PC.";}
                 if(!configured&&value.ContainsKey("preferredAddress")){string preferred=Convert.ToString(value["preferredAddress"]);foreach(var entry in addresses)if(entry.Value==preferred){view.Network.SelectedItem=entry.Key;break;}}
                 enabled=Convert.ToBoolean(value["enabled"]);configured=true;networkReady=value.ContainsKey("needsNetwork")&&!Convert.ToBoolean(value["needsNetwork"]);
                 connected=value.ContainsKey("connected")?Convert.ToString(value["connected"]):"";if(connected.Length>0)pairedDone=false;if(pending=="enable"&&enabled)pending="";
@@ -201,7 +201,7 @@ internal sealed class HostWindow : Form {
         else if(kind=="focusControlClosed"){if(authorizedFocusGeneration==Convert.ToString(value["generation"])){InvalidateFocus();focusStopping=false;}}
         else if(kind=="focusBarcode")PresentFocusQr(value);
         else if(kind=="focusBarcodeClosed"){string generation=Convert.ToString(value["generation"]);if(focusGeneration==generation)ClearFocusQr();else if(!focusQrAllowed)retiredFocusGeneration=generation;}
-        else if(kind=="focusEnded"){if(focusGeneration==Convert.ToString(value["generation"])){InvalidateFocus();error="Focus ended. Your device is still paired.";}}
+        else if(kind=="focusEnded"){if(focusGeneration==Convert.ToString(value["generation"])){InvalidateFocus();error="Immersive Mode ended. Your device is still paired.";}}
         else if(kind=="error"){pairingExpected=false;ClearPairing();if(focusBitmap!=null||focusQrAllowed)StopFocus();Fail(Convert.ToString(value["message"]));}
         Render();
     }
