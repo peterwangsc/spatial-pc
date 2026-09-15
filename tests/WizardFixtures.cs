@@ -75,6 +75,28 @@ internal static class WizardFixtures {
             w.FixtureRevoke((id,name)=>{Check(id==new string('a',32)&&name=="Example Vision Pro","revoke captured target");w.FixtureView.Devices.Items[0].Selected=false;var other=new ListViewItem("Other public device"){Tag=new string('c',32)};w.FixtureView.Devices.Items.Add(other);other.Selected=true;return true;});
             Check((string)w.FixtureCommands.Last()["deviceId"]==new string('a',32),"revoke targets captured id after selection change");
             int count=w.FixtureCommands.Count;w.FixtureView.Devices.Items[1].Selected=false;w.FixtureView.Devices.Items[0].Selected=true;w.FixtureRevoke((id,name)=>{w.FixtureView.Devices.Items.Clear();return true;});Check(w.FixtureCommands.Count==count,"disappeared device does not revoke another");w.FixtureDispose();
+            foreach(bool barcodePresented in new[]{false,true}){
+                w=Ready();w.FixtureBeginFocus();
+                if(barcodePresented)w.FixtureQr(D("generation","health-ended","requestId","public-before","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                var stopping=Status(true);stopping["mediaMode"]="focus";((Dictionary<string,object>)stopping["focus"])["state"]="stopping";w.FixtureReceive(stopping);
+                w.FixtureReceive(Status(true)); // Health cleanup's idle status arrives BEFORE its error.
+                w.FixtureReceive(D("event","error","message","Focus stopped. Your existing pairing is unchanged."));
+                var commands=w.FixtureCommands;
+                Check(commands.Count>=2&&(string)commands[commands.Count-2]["command"]=="stopFocus"&&(string)commands.Last()["command"]=="status","health error queues stop then fresh status, QR="+barcodePresented);
+                int starts=commands.Count(c=>(string)c["command"]=="startFocus");w.FixtureBeginFocus();
+                Check(commands.Count(c=>(string)c["command"]=="startFocus")==starts,"health recovery waits for post-stop idle acknowledgement");
+                // The already-idle worker emits nothing for stopFocus. Its next
+                // FIFO status command supplies the explicit cleanup barrier.
+                w.FixtureQr(D("generation","health-ended","requestId","public-queued","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                Check(w.FixtureView.Qr.Image==null&&!(bool)commands.Last()["accepted"],"queued old QR remains rejected during health recovery");
+                var idle=Status(true);((Dictionary<string,object>)idle["focus"])["available"]=true;w.FixtureReceive(idle);
+                Check(w.FixtureView.StartFocus.Enabled,"Start available after fresh idle acknowledgement");
+                w.FixtureBeginFocus();Check(commands.Count(c=>(string)c["command"]=="startFocus")==starts+1,"explicit retry after health cleanup");
+                w.FixtureQr(D("generation","health-ended","requestId","public-retired","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                Check(w.FixtureView.Qr.Image==null,"health-ended generation remains retired after retry");
+                w.FixtureQr(D("generation","health-retry","requestId","public-fresh","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                Check(w.FixtureView.Qr.Image!=null,"fresh explicit generation renders after health recovery");w.FixtureDispose();
+            }
             File.WriteAllText(Path.Combine(output,"result.txt"),passed+" assertions PASS; public fixture only; no backend/network/input/screenshots.\n");Console.WriteLine(passed+" assertions PASS");return 0;
         }catch(Exception e){Console.Error.WriteLine(e.ToString());return 1;}
     }

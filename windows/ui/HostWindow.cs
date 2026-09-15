@@ -62,7 +62,7 @@ internal sealed class HostWindow : Form {
     }
     void BeginFocus(){if(focusStopping||focusActive||focusQrAllowed)return;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;focusGeneration=null;focusQrAllowed=true;view.StartFocus.Enabled=false;Send("startFocus");view.ShowSettings(false);Render();}
     void InvalidateFocus(){focusQrAllowed=false;focusStopping=true;view.StartFocus.Enabled=false;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;ClearFocusQr();}
-    void StopFocus(){InvalidateFocus();Send("stopFocus");Render();}
+    void StopFocus(){InvalidateFocus();Send("stopFocus");Send("status");Render();}
     void CancelSensitive(){if(focusBitmap!=null||focusQrAllowed)StopFocus();if(pairingExpected){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";}Render();}
     void Tick(){
         if(!fixture&&enabled&&!development&&DateTime.UtcNow>=nextNetworkCheck){nextNetworkCheck=DateTime.UtcNow.AddSeconds(5);try{
