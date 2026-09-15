@@ -1,0 +1,293 @@
+{
+  "boundary" : "Synthetic Mac Data assembly, including async callback overhead; no sockets, decode, or headset. Pointer identity observes this Foundation build only.",
+  "runs" : [
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 17.670207999999999,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 15.474729,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 14.1476665,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 15.149103999999999,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 22.4697295,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 21.501417,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 22.026624999999999,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 16384,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 22.266291499999998,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 15.2067915,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.830562499999999,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.809979,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 15.361000000000001,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 22.563812500000001,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 23.1648125,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 23.042021000000002,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 65536,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 22.6090415,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 18.664291500000001,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.9791875,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.23175,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 18.872229000000001,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 26.042604000000001,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 39.667250000000003,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 38.350479,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 262144,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 26.089208500000002,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 29.950916499999998,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.997896000000001,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 13.979729499999999,
+      "mode" : "candidate",
+      "sourceStorageReused" : 2000
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 1,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 30.672999999999998,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 36.636875000000003,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 79.534020999999996,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 79.383145999999996,
+      "mode" : "candidate",
+      "sourceStorageReused" : 0
+    },
+    {
+      "bytes" : 1048576,
+      "checksum" : 662000,
+      "fragments" : 2,
+      "iterations" : 2000,
+      "meanAssemblyMicroseconds" : 35.488395499999996,
+      "mode" : "baseline",
+      "sourceStorageReused" : 0
+    }
+  ]
+}

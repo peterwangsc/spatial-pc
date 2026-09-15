@@ -157,6 +157,9 @@ final class DesktopStreamClient {
                 complete(digest == pair.serverSHA256)
             },queue)
             let tcp = NWProtocolTCP.Options()
+            // Reverse input records are small and latency-sensitive; do not wait
+            // for another record to fill an outbound TCP segment.
+            tcp.noDelay = true
             tcp.enableKeepalive = true; tcp.keepaliveIdle = 10; tcp.keepaliveInterval = 5; tcp.keepaliveCount = 3
             let parameters = NWParameters(tls:tls,tcp:tcp)
             let connection = NWConnection(to:pair.endpoint,using:parameters)
@@ -264,21 +267,22 @@ final class DesktopStreamClient {
         }
     }
     nonisolated private func receive(_ size: Int, on connection: NWConnection) async throws -> Data {
-        var result = Data()
-        result.reserveCapacity(size)
-        while result.count < size {
-            let remaining = size-result.count
-            let part: Data = try await withCheckedThrowingContinuation { continuation in
+        var buffer = try ExactStreamReader(size)
+        while buffer.remaining > 0 {
+            try Task.checkCancellation()
+            let remaining = buffer.remaining
+            let part:Data = try await withCheckedThrowingContinuation { continuation in
                 connection.receive(minimumIncompleteLength:remaining,maximumLength:remaining) { data, _, _, error in
                     if let error { continuation.resume(throwing:error) }
                     else if let data, !data.isEmpty { continuation.resume(returning:data) }
                     else { continuation.resume(throwing:Failure.ended) }
                 }
             }
-            result.append(part)
+            try buffer.append(part)
         }
-        return result
+        return buffer.data
     }
+
     private func receiveStream(_ connection: NWConnection, sessionID: UUID) async {
         do {
             let payload = Data("{\"version\":1,\"codecs\":[\"h264-annexb\"],\"maxWidth\":8192,\"maxHeight\":8192,\"input\":{\"version\":1,\"textVersion\":1}}".utf8)
