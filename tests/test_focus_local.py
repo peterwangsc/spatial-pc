@@ -75,8 +75,16 @@ class Sessions(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):await self.focus.stop()
 
     async def run_messages(self,data):
-        reader=asyncio.StreamReader();reader.feed_data(data);reader.feed_eof()
-        await self.focus._connection(reader,self.writer)
+        reader=asyncio.StreamReader()
+        task=asyncio.create_task(self.focus._connection(reader,self.writer))
+        while data and not task.done():
+            size=struct.unpack('<I',data[:4])[0];one=data[:4+size];data=data[4+size:]
+            before=len(self.writer.data);reader.feed_data(one)
+            for _ in range(100):
+                if task.done() or len(self.writer.data)>before:break
+                await asyncio.sleep(0)
+        reader.feed_eof()
+        await asyncio.wait_for(task,1)
 
     async def test_system_client_used_and_only_waiting_starts_media(self):
         await self.run_messages(REQUEST+BARCODE+WAITING+DISCONNECTED)
@@ -131,6 +139,77 @@ class Sessions(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.focus.receipt)
         await self.focus.stop()
         self.assertTrue(native.stopped);self.assertTrue(self.writer.closed)
+
+    async def test_disconnect_and_eof_cancel_each_inflight_phase(self):
+        for phase in ('prepare','barcode','media'):
+            for terminal in ('disconnect','eof'):
+                with self.subTest(phase=phase,terminal=terminal):
+                    reached=asyncio.Event()
+                    class Suspended(Native):
+                        async def pause(self):
+                            reached.set()
+                            try:await asyncio.Event().wait()
+                            except asyncio.CancelledError:pass # Deliberately late native completion.
+                        async def start(self,client):
+                            self.client=client
+                            if phase=='prepare':await self.pause()
+                        async def start_media(self):
+                            if phase=='media':await self.pause()
+                    events=[]
+                    def notify(value):
+                        events.append(value)
+                        if value['event']=='focusBarcode':
+                            if phase=='barcode':reached.set()
+                            else:focus.barcode_receipt(value['requestId'],True)
+                    focus=LocalFocus({'_notify':notify},'c'*32,Suspended)
+                    focus.running=True;focus.deadline=time.monotonic()+5
+                    reader=asyncio.StreamReader();writer=Writer()
+                    focus.task=asyncio.create_task(focus._connection(reader,writer))
+                    async def response(marker):
+                        async with asyncio.timeout(1):
+                            while marker not in writer.data:await asyncio.sleep(0)
+                    reader.feed_data(REQUEST)
+                    if phase!='prepare':
+                        await response(b'AcknowledgeConnection');reader.feed_data(BARCODE)
+                    if phase=='media':
+                        await response(b'AcknowledgeBarcodePresentation');reader.feed_data(WAITING)
+                    await asyncio.wait_for(reached.wait(),1)
+                    if terminal=='eof':reader.feed_eof()
+                    else:reader.feed_data(DISCONNECTED)
+                    await asyncio.wait_for(focus.task,1)
+                    self.assertTrue(focus.invalid);self.assertTrue(writer.closed);self.assertTrue(focus.native.stopped)
+                    self.assertNotIn(b'MediaStreamIsReady',writer.data)
+                    if phase=='prepare':self.assertNotIn(b'AcknowledgeConnection',writer.data)
+                    if phase=='barcode':self.assertNotIn(b'AcknowledgeBarcodePresentation',writer.data)
+                    await focus.stop()
+
+    async def test_bounded_backlog_cancels_suspended_prepare(self):
+        reached=asyncio.Event()
+        class Suspended(Native):
+            async def start(self,client):reached.set();await asyncio.Event().wait()
+        self.focus.factory=Suspended
+        reader=asyncio.StreamReader();self.focus.task=asyncio.create_task(self.focus._connection(reader,self.writer))
+        reader.feed_data(REQUEST);await asyncio.wait_for(reached.wait(),1)
+        reader.feed_data(BARCODE*9)
+        await asyncio.wait_for(self.focus.task,1)
+        self.assertTrue(self.focus.invalid);self.assertTrue(self.focus.native.stopped)
+        self.assertNotIn(b'AcknowledgeConnection',self.writer.data)
+
+    async def test_health_stop_does_not_interrupt_terminal_native_cleanup(self):
+        closing=asyncio.Event();finish=asyncio.Event();calls=[]
+        class SlowStop(Native):
+            async def stop(self):
+                if self.stopped:return
+                calls.append('stop');closing.set();await finish.wait();self.stopped=True
+        self.focus.factory=SlowStop
+        reader=asyncio.StreamReader();self.focus.task=asyncio.create_task(self.focus._connection(reader,self.writer))
+        reader.feed_data(REQUEST)
+        async with asyncio.timeout(1):
+            while b'AcknowledgeConnection' not in self.writer.data:await asyncio.sleep(0)
+        reader.feed_eof();await asyncio.wait_for(closing.wait(),1)
+        cleanup=asyncio.create_task(self.focus.stop());await asyncio.sleep(0);finish.set()
+        await asyncio.wait_for(cleanup,1)
+        self.assertEqual(calls,['stop']);self.assertFalse(self.focus.cleanup_failed)
 
 
 class Generation(unittest.IsolatedAsyncioTestCase):

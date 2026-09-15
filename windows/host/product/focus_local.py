@@ -60,6 +60,13 @@ class LocalFocus:
         self.server=None;self.task=None;self.native=None;self.writer=None;self.expiry=None
         self.running=False;self.invalid=False;self.cleanup_failed=False
         self.receipt=None;self.receipt_id=None;self.deadline=0;self.session=None
+        self.handler=None;self.pump=None;self.messages=None;self.read_timer=None
+        self.cancel_sent=False;self.closing=False
+
+    def cancel_handler(self):
+        target=self.handler or self.task
+        if target is not None and not self.cancel_sent and not self.closing:
+            self.cancel_sent=True;target.cancel()
 
     async def start(self,_local_owner):
         address=self.config['_address']
@@ -78,7 +85,7 @@ class LocalFocus:
         await asyncio.sleep(180)
         if self.session is None or self.receipt is not None:
             self.invalid=True
-            if self.task:self.task.cancel()
+            self.cancel_handler()
             self.running=False
             if self.server:self.server.close()
 
@@ -99,11 +106,29 @@ class LocalFocus:
 
     def notify(self,value):self.config['_notify'](dict(value,generation=self.session_id))
 
+    async def _read_pump(self,reader):
+        try:
+            async with asyncio.timeout_at(self.deadline) as timer:
+                self.read_timer=timer
+                while not self.invalid:
+                    # One reader remains active throughout vendor RPC/UI waits.
+                    event=await read_message(reader,None)
+                    if event['SessionID']!=self.session or event['Event']=='RequestConnection':raise ValueError('Focus session mismatch')
+                    if event['Event']=='SessionStatusDidChange' and event['Status']=='DISCONNECTED':break
+                    self.messages.put_nowait(event)
+        except asyncio.CancelledError:return
+        except (ValueError,OSError,TimeoutError,asyncio.IncompleteReadError,asyncio.QueueFull):pass
+        self.invalid=True;self.running=False
+        self.cancel_handler()
+
     async def _connection(self,reader,writer):
+        self.handler=asyncio.current_task()
         try:
             request=await read_message(reader,min(5,max(.001,self.deadline-time.monotonic())))
             if request['Event']!='RequestConnection':raise ValueError('Expected Focus connection')
             self.session=request['SessionID']
+            self.messages=asyncio.Queue(maxsize=8)
+            self.pump=asyncio.create_task(self._read_pump(reader))
             self.native=self.factory(self.config,self.session_id)
             await asyncio.wait_for(self.native.start(request['ClientID']),16)
             if self.invalid:raise asyncio.CancelledError()
@@ -115,8 +140,7 @@ class LocalFocus:
                 deadline=hard_deadline if paired else self.deadline
                 remaining=deadline-time.monotonic()
                 if remaining<=0:raise TimeoutError('Focus session expired')
-                event=await read_message(reader,remaining)
-                if event['SessionID']!=self.session or event['Event']=='RequestConnection':raise ValueError('Focus session mismatch')
+                event=await asyncio.wait_for(self.messages.get(),remaining)
                 if event['Event']=='RequestBarcodePresentation':
                     if presented or ready:raise ValueError('Duplicate Focus barcode request')
                     self.receipt=asyncio.get_running_loop().create_future();self.receipt_id=secrets.token_hex(16)
@@ -132,20 +156,29 @@ class LocalFocus:
                 elif event['Status']=='WAITING':
                     if not presented or ready:raise ValueError('Unexpected Focus WAITING')
                     paired=True # Protocol progression only, not an SPP2 authentication claim.
+                    self.read_timer.reschedule(hard_deadline)
                     self.notify(dict(event='focusBarcodeClosed'))
                     await asyncio.wait_for(self.native.start_media(),16)
                     if self.invalid:raise asyncio.CancelledError()
                     ready=True
                     await send_message(writer,'MediaStreamIsReady',self.session)
                 elif not ready:raise ValueError('Focus status before readiness')
+        except asyncio.CancelledError:pass
         except (ValueError,OSError,TimeoutError,asyncio.IncompleteReadError):
             self.notify(dict(event='focusEnded',reason='Local Focus session ended. Pairing is unchanged.'))
         finally:
-            self.running=False;self.notify(dict(event='focusBarcodeClosed'))
+            self.closing=True
+            self.invalid=True;self.running=False;self.notify(dict(event='focusBarcodeClosed'))
+            if self.pump:
+                self.pump.cancel();await asyncio.gather(self.pump,return_exceptions=True);self.pump=None
             writer.close()
             try:await asyncio.wait_for(writer.wait_closed(),1)
             except (OSError,TimeoutError):pass
-            # Controller performs native teardown before releasing shared media owner.
+            try:
+                if self.native:await self.native.stop()
+            except BaseException:
+                self.cleanup_failed=True;raise
+            finally:self.handler=None
 
     def alive(self):
         return (self.running and not self.invalid and (self.task is None or not self.task.done()) and
@@ -160,7 +193,7 @@ class LocalFocus:
             try:
                 if self.expiry:self.expiry.cancel();await asyncio.gather(self.expiry,return_exceptions=True);self.expiry=None
                 if self.task:
-                    self.task.cancel();await asyncio.gather(self.task,return_exceptions=True);self.task=None
+                    self.cancel_handler();await asyncio.gather(self.task,return_exceptions=True);self.task=None
                 if self.server:await asyncio.wait_for(self.server.wait_closed(),2);self.server=None
             finally:
                 self.notify(dict(event='focusBarcodeClosed'))
