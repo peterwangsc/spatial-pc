@@ -15,20 +15,29 @@ from .pairing_wire import OpeningBudget, PairingRateLimited
 from .stream_server import StreamServer
 from .discovery import Discovery
 from .network import local_addresses,normalize
+from .media_owner import MediaOwner
+from .focus import FocusController,FocusDeployment
+from .focus_local import LocalFocus
 
 
 class Worker:
-    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True):
+    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True,focus_deployment=None,focus_factory=None,xr_development=False):
         self.identity=identity;self.capture=capture;self.bridge=bridge;self.notify=notify;self.development=development
         self.stream_port=47993 if development else 47991;self.pair_port=47992 if development else 47990
         self.discovery_enabled=discovery;self.discovery=None;self.stream=None;self.stream_task=None
         self.pair=None;self.pair_task=None;self.address=None;self.enabled=False;self.connected=''
+        self.focus_previous_enabled=None
         self.opening_budget=OpeningBudget()
         self.message='Select a Private network and enable access when you are ready.'
+        self.media=MediaOwner();self.encoder='mf';self.nvenc=capture.parent/'capture_nvenc.exe'
+        self.focus=FocusController(self.media,focus_deployment or FocusDeployment(capture.parent.parent,development or xr_development),self.status,
+                                   factory=focus_factory or LocalFocus)
 
     def status(self):
         self.notify(dict(event='status',enabled=self.enabled,connected=self.connected,message=self.message,
             needsNetwork=self.address is None,preferredAddress=self.identity.state.get('bindAddress'),
+            mediaMode=self.media.mode,desktopEncoder=self.encoder,nvencConfigured=self.nvenc.is_file(),
+            focus=self.focus.capability(),
             devices=[{k:d[k] for k in ('id','name','pairedAt')} for d in self.identity.state['devices']]))
 
     def event(self,value):
@@ -61,7 +70,10 @@ class Worker:
         if self.discovery:await self.discovery.pairing(False)
 
     async def stop(self):
-        self.enabled=False
+        self.enabled=False;self.focus_previous_enabled=None
+        focus_error=None
+        try:await self.focus.stop()
+        except Exception as error:focus_error=error
         await self.stop_pairing()
         task=self.stream_task;self.stream_task=None
         if self.stream:self.stream.stopped.set()
@@ -74,16 +86,22 @@ class Worker:
         if self.discovery:
             await self.discovery.close();self.discovery=None
         self.connected='';self.message='Access is disabled. No desktop is being shared.';self.status()
+        if focus_error:raise RuntimeError('Focus cleanup failed; quit Spatial PC') from focus_error
 
     async def start(self):
+        if self.media.failed:raise ValueError('Quit Spatial PC after failed media cleanup.')
         if not self.address:raise ValueError('Select a Private network first.')
         if not self.capture.is_file() or not self.bridge.is_file():raise ValueError('Repair the Spatial PC installation: a host component is missing.')
         await self.stop()
-        self.stream=StreamServer(self.identity,self.address,self.stream_port,self.capture,self.bridge,self.event)
+        await self.start_desktop()
+
+    async def start_desktop(self):
+        selected=self.nvenc if self.encoder=='nvenc' else self.capture
+        self.stream=StreamServer(self.identity,self.address,self.stream_port,selected,self.bridge,self.event,self.media,self.encoder)
         self.stream_task=asyncio.create_task(self.stream.run())
         try:
             await self.start_task(self.stream_task,self.stream.ready)
-            if self.discovery_enabled:
+            if self.discovery_enabled and self.discovery is None:
                 self.discovery=Discovery(self.identity,self.address,self.stream_port,self.pair_port)
                 await self.discovery.start()
             self.enabled=True
@@ -92,14 +110,62 @@ class Worker:
         except BaseException:
             await self.stop();raise
 
+    async def pause_desktop(self):
+        await self.stop_pairing()
+        task=self.stream_task;self.stream_task=None
+        if self.stream:self.stream.stopped.set()
+        if task:
+            task.cancel()
+            result=await asyncio.gather(task,return_exceptions=True)
+            if result and isinstance(result[0],RuntimeError):raise RuntimeError('Desktop cleanup failed')
+        self.stream=None
+
+    async def stop_focus(self):
+        await self.focus.stop()
+        await self.restore_focus_access()
+
+    async def restore_focus_access(self):
+        previous=self.focus_previous_enabled;self.focus_previous_enabled=None
+        if previous is None:return
+        if previous and self.enabled and not self.media.failed:
+            if self.stream is None:await self.start_desktop()
+        else:
+            self.enabled=False;self.message='Access is disabled. No desktop is being shared.';self.status()
+
     async def command(self,value):
         if not isinstance(value,dict) or len(value)>3:raise ValueError('Invalid local command')
         command=value.get('command')
         expected={'status':{'command'},'enable':{'command','value'},'network':{'command','address'},
                   'pair':{'command'},'cancelPairing':{'command'},'approve':{'command','requestId','accepted'},
-                  'revoke':{'command','deviceId'},'shutdown':{'command'}}
+                  'revoke':{'command','deviceId'},'shutdown':{'command'},
+                  'desktopEncoder':{'command','value'},'startFocus':{'command'},'stopFocus':{'command'},
+                  'focusBarcodeReceipt':{'command','requestId','accepted'}}
         if command not in expected or set(value)!=expected[command]:raise ValueError('Invalid local command')
         if command=='status':self.status()
+        elif command=='desktopEncoder':
+            if self.media.mode!='idle':raise ValueError('Stop media before changing encoder.')
+            if value['value'] not in ('mf','nvenc'):raise ValueError('Invalid encoder')
+            if value['value']=='nvenc' and not self.nvenc.is_file():raise ValueError('Optional NVENC component missing')
+            self.encoder=value['value']
+            if self.enabled:await self.start()
+            else:self.status()
+        elif command=='startFocus':
+            if not self.address:raise ValueError('Select a Private network before Focus')
+            previous=self.enabled;prepared=False
+            async def prepare_focus():
+                nonlocal prepared
+                await self.pause_desktop()
+                self.focus_previous_enabled=previous;self.enabled=True;prepared=True
+            try:await self.focus.start(None,prepare_focus,{'_address':self.address,'_notify':self.notify})
+            except BaseException:
+                if prepared:await self.restore_focus_access()
+                raise
+            self.message='Focus development window: connect on port 55000. Separate system QR pairing; XR media is not encrypted.';self.status()
+        elif command=='focusBarcodeReceipt':
+            if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid QR receipt')
+            adapter=self.focus.adapter
+            if adapter and hasattr(adapter,'barcode_receipt'):adapter.barcode_receipt(value['requestId'],value['accepted'])
+        elif command=='stopFocus':await self.stop_focus()
         elif command=='enable':
             if type(value['value']) is not bool:raise ValueError('Invalid access preference')
             if value['value']:await self.start()
@@ -114,6 +180,7 @@ class Worker:
                 raise ValueError('Choose an address on this PC.')
             self.identity.configure(bindAddress=address);self.address=address;self.status()
         elif command=='pair':
+            if self.media.mode=='focus':raise ValueError('Stop Focus before pairing.')
             if not self.enabled:raise ValueError('Enable access before pairing.')
             if len(self.identity.state['devices'])>=10:raise ValueError('Revoke a device before pairing another.')
             self.opening_budget.reserve()
@@ -135,12 +202,18 @@ class Worker:
         elif command=='revoke':
             if not isinstance(value['deviceId'],str) or len(value['deviceId'])!=32:raise ValueError('Invalid device')
             self.identity.revoke(value['deviceId'])
+            # System XR pairing cannot be mapped to an SPP2 device. Revoke stops all Focus.
+            if self.media.mode=='focus':await self.stop_focus()
             if self.stream and self.stream.connected_id==value['deviceId']:
                 await self.start() # Cancellation releases this device before accepting another.
             self.status()
         elif command=='shutdown':await self.stop()
 
     async def health(self):
+        try:await self.focus.health()
+        except OSError:
+            await self.restore_focus_access()
+            self.notify(dict(event='error',message='Focus stopped. Your existing pairing is unchanged.'))
         if self.stream_task and self.stream_task.done():
             task=self.stream_task
             await self.stop()
@@ -154,7 +227,7 @@ class Worker:
             self.notify(dict(event='error',message='The network changed. Select a Private network and enable access again.'))
 
 
-async def run(development):
+async def run(development,xr_development=False):
     loop=asyncio.get_running_loop();commands=asyncio.Queue(maxsize=16);stop=asyncio.Event();output=queue.Queue(maxsize=32)
     def halt():loop.call_soon_threadsafe(stop.set)
     def notify(value):
@@ -185,7 +258,7 @@ async def run(development):
     worker=None
     try:
         identity=Identity(root)
-        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development)
+        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development,xr_development=xr_development)
         worker.status()
         while not stop.is_set():
             try:value=await asyncio.wait_for(commands.get(),.5)
@@ -198,7 +271,7 @@ async def run(development):
             except (ValueError,OSError,TimeoutError):
                 notify(dict(event='error',message='The operation could not finish. Check your Private network and installation, then try again.'))
     except Exception:
-        notify(dict(event='error',message='Spatial PC could not open its protected identity. Your pairing has not been reset. Repair the installation or contact support.'))
+        notify(dict(event='error',message='Spatial PC could not continue safely. Your pairing has not been reset. Repair the installation or contact support.'))
     finally:
         if worker:await worker.stop()
         await asyncio.sleep(.05)
@@ -206,5 +279,6 @@ async def run(development):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--development',action='store_true')
+    parser.add_argument('--xr-development',action='store_true')
     args=parser.parse_args()
-    asyncio.run(run(args.development))
+    asyncio.run(run(args.development,args.xr_development))

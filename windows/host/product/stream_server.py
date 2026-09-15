@@ -9,10 +9,11 @@ from .tls_listener import listen
 
 
 class StreamServer:
-    def __init__(self,identity,address,port,capture,bridge,notify):
+    def __init__(self,identity,address,port,capture,bridge,notify,media=None,encoder='mf'):
         self.identity=identity;self.address=address;self.port=port;self.capture=capture;self.bridge=bridge;self.notify=notify
         self.stopped=asyncio.Event();self.ready=asyncio.Event();self.connected_id=None;self.session_task=None
         self.last_summary=None
+        self.media=media;self.encoder=encoder
 
     async def run(self):
         await listen(self.address,self.port,self.identity.tls_context(),self.session,self.stopped,self.ready)
@@ -23,9 +24,14 @@ class StreamServer:
         fingerprint=hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()
         device=self.identity.device_for(fingerprint)
         if device is None:raise ValueError('Revoked or unpaired peer')
-        owner=CaptureOwner();self.connected_id=device['id'];self.session_task=asyncio.current_task()
+        lease=self.media.claim('desktop',device['id']) if self.media else None
+        try:owner=CaptureOwner()
+        except BaseException:
+            if self.media:self.media.release(lease)
+            raise
+        self.connected_id=device['id'];self.session_task=asyncio.current_task()
         self.notify(dict(event='connecting',name=device['name']))
-        started=False;failure=None
+        started=False;failure=None;clean=True
         def ready(caps):
             nonlocal started
             started=True
@@ -38,11 +44,14 @@ class StreamServer:
             await run_session(reader,writer,{'clientSHA256':fingerprint},self.capture,self.bridge,
                 self.identity.directory/'session',time.monotonic()+remaining,report=self.report,
                 ready=ready,
-                capture_owner=owner.assign,continuous=True)
+                capture_owner=owner.assign,continuous=True,encoder=self.encoder)
         except (OSError,ValueError,EOFError,TimeoutError,asyncio.IncompleteReadError):
             if not started:failure='The desktop could not start. Check that a display is active, update your GPU driver, and use the latest Spatial PC on both devices.'
+        except RuntimeError:
+            clean=False;raise
         finally:
             owner.close();self.connected_id=None;self.session_task=None
+            if self.media:self.media.release(lease,clean)
             event=dict(event='disconnected')
             if failure:event['message']=failure
             self.notify(event)

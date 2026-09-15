@@ -31,7 +31,7 @@ internal static class Program {
                 return;
             }
             if(!created) { activate.Set(); return; }
-            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"));
+            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),args.Contains("--xr-development"));
             var registration=ThreadPool.RegisterWaitForSingleObject(activate,(s,t)=>{
                 if(window.IsHandleCreated&&!window.IsDisposed)window.BeginInvoke(new Action(window.Reveal));
             },null,Timeout.Infinite,false);
@@ -50,18 +50,21 @@ internal sealed class HostWindow : Form {
     readonly TextBox code=new TextBox(); readonly ComboBox network=new ComboBox();
     readonly ListView devices=new ListView(); readonly Panel approval=new Panel();
     readonly CheckBox startup=new CheckBox(); readonly NotifyIcon tray=new NotifyIcon();
+    readonly ComboBox encoder=new ComboBox(); readonly Button startFocus=new Button(),stopFocus=new Button();
+    readonly Label focusStatus=new Label(); bool receivingStatus=false,focusAvailable=false;
+    Form focusQr;string focusGeneration=null;
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
     Process worker; bool enabled=false,quitting=false,configured=false; string requestId=null;
-    DateTime pairingUntil=DateTime.MinValue,nextNetworkCheck=DateTime.MinValue; readonly bool background,development;
+    DateTime pairingUntil=DateTime.MinValue,nextNetworkCheck=DateTime.MinValue; readonly bool background,development,xrDevelopment;
     readonly Dictionary<string,string> addresses=new Dictionary<string,string>();
     readonly BlockingCollection<string> outgoing=new BlockingCollection<string>(16);
 
-    public HostWindow(bool background,bool development) {
-        this.background=background;this.development=development;
-        Text="Spatial PC";ClientSize=new Size(780,640);MinimumSize=new Size(720,640);
+    public HostWindow(bool background,bool development,bool xrDevelopment) {
+        this.background=background;this.development=development;this.xrDevelopment=xrDevelopment;
+        Text="Spatial PC";ClientSize=new Size(780,720);MinimumSize=new Size(720,720);
         Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;StartPosition=FormStartPosition.CenterScreen;
         BackColor=Color.FromArgb(247,249,252);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        var layout=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(24),ColumnCount=1,RowCount=9 };
+        var layout=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(24),ColumnCount=1,RowCount=10 };
         Controls.Add(layout);
         state.Text="Starting Spatial PC…";state.Font=new Font(Font.FontFamily,20,FontStyle.Bold);state.AutoSize=true;
         layout.Controls.Add(state);
@@ -74,6 +77,7 @@ internal sealed class HostWindow : Form {
         network.DropDownStyle=ComboBoxStyle.DropDownList;network.Width=330;network.AccessibleName="Private network";
         network.SelectedIndexChanged+=(s,e)=>{ if(configured&&!enabled&&network.SelectedItem!=null)Send("network","address",addresses[network.SelectedItem.ToString()]); };
         firewall.Text="Set up network";firewall.AutoSize=true;firewall.Click+=async(s,e)=>await ConfigureFirewall();
+        firewall.Visible=!xrDevelopment; // Development Focus uses reviewed, separately scoped setup.
         accessRow.Controls.Add(access);accessRow.Controls.Add(network);accessRow.Controls.Add(firewall);layout.Controls.Add(accessRow);
         var pairRow=new FlowLayoutPanel { AutoSize=true,Dock=DockStyle.Fill,Margin=new Padding(0,16,0,0) };
         pair.Text="Pair a new device";pair.AutoSize=true;pair.Enabled=false;pair.Click+=(s,e)=>Send("pair");
@@ -98,12 +102,23 @@ internal sealed class HostWindow : Form {
         using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))startup.Checked=key!=null&&String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase);
         startup.CheckedChanged+=(s,e)=>SetStartup();deviceRow.Controls.Add(revoke);deviceRow.Controls.Add(startup);layout.Controls.Add(deviceRow);
         var footer=new Label { AutoSize=true,MaximumSize=new Size(700,0),ForeColor=Color.DimGray,Text="Closing this window keeps Spatial PC in the notification area. Quit there to stop access. Keyboard navigation on Vision Pro requires Full Keyboard Access to be off." };
-        layout.Controls.Add(footer);
+        var mediaRow=new FlowLayoutPanel{AutoSize=true,Dock=DockStyle.Fill,WrapContents=true};
+        encoder.DropDownStyle=ComboBoxStyle.DropDownList;encoder.Width=220;encoder.AccessibleName="Desktop encoder";
+        encoder.Items.Add("Desktop: Media Foundation");encoder.Items.Add("Desktop: NVENC (preview)");encoder.SelectedIndex=0;
+        encoder.SelectedIndexChanged+=(s,e)=>{if(!receivingStatus)Send("desktopEncoder","value",encoder.SelectedIndex==1?"nvenc":"mf");};
+        mediaRow.Controls.Add(encoder);
+        startFocus.Text="Start XR Focus";startFocus.AutoSize=true;startFocus.Enabled=false;
+        startFocus.Click+=(s,e)=>{if(MessageBox.Show(this,"Open a three-minute XR development window? Vision Pro will use separate system QR pairing. XR media is not encrypted. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes)Send("startFocus");};
+        stopFocus.Text="Stop XR Focus";stopFocus.AutoSize=true;stopFocus.Enabled=false;stopFocus.Click+=(s,e)=>Send("stopFocus");
+        focusStatus.AutoSize=true;focusStatus.Text="XR Focus is not configured.";
+        if(development||xrDevelopment){mediaRow.Controls.Add(startFocus);mediaRow.Controls.Add(stopFocus);mediaRow.Controls.Add(focusStatus);}
+        layout.Controls.Add(mediaRow);layout.Controls.Add(footer);
         tray.Icon=Icon;tray.Text="Spatial PC — access disabled";tray.Visible=true;tray.DoubleClick+=(s,e)=>Reveal();
         var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>Send("enable","value",false));menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
         Shown+=(s,e)=>{
             LoadNetworks();
-            if(development||FirewallPolicy.Configured())StartWorker();
+            // XR development can prepare an idle backend without opening desktop ports.
+            if(development||xrDevelopment||FirewallPolicy.Configured())StartWorker();
             else{state.Text="Set up your connection";details.Text=FirewallPolicy.BlockReason()??"Choose Set up network to allow Spatial PC on your Private local network. Access will stay disabled.";}
             if(background)Hide();
         };
@@ -141,12 +156,12 @@ internal sealed class HostWindow : Form {
         try {
             string root=AppDomain.CurrentDomain.BaseDirectory;
             string python=Path.Combine(root,"runtime","python.exe");
-            var start=new ProcessStartInfo(python,"-I -B -m product.main"+(development?" --development":"")) {
+            var start=new ProcessStartInfo(python,"-I -B -m product.main"+(development?" --development":"")+(xrDevelopment?" --xr-development":"")) {
                 UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=root,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8 };
             worker=new Process { StartInfo=start,EnableRaisingEvents=true };
             worker.OutputDataReceived+=(s,e)=>{if(e.Data==null)return;if(e.Data.Length>32768){Send("shutdown");return;}try{var value=json.Deserialize<Dictionary<string,object>>(e.Data);BeginInvoke(new Action(()=>Receive(value)));}catch(Exception){}};
             worker.ErrorDataReceived+=(s,e)=>{}; // Backend does not emit secrets; never retain arbitrary stderr.
-            worker.Exited+=(s,e)=>{if(!quitting&&IsHandleCreated)BeginInvoke(new Action(()=>{enabled=false;state.Text="Access stopped";details.Text="Spatial PC stopped safely. Quit and reopen to try again.";access.Enabled=false;pair.Enabled=false;ClearPairing();}));};
+            worker.Exited+=(s,e)=>{if(!quitting&&IsHandleCreated)BeginInvoke(new Action(()=>{enabled=false;state.Text="Access stopped";details.Text="Spatial PC stopped safely. Quit and reopen to try again.";access.Enabled=false;pair.Enabled=false;ClearPairing();ClearFocusQr();}));};
             worker.Start();worker.BeginOutputReadLine();worker.BeginErrorReadLine();
             var sender=new Thread(()=>{try{foreach(string item in outgoing.GetConsumingEnumerable()){worker.StandardInput.WriteLine(item);worker.StandardInput.Flush();}worker.StandardInput.Close();}catch(Exception){try{worker.StandardInput.Close();}catch(Exception){}}});sender.IsBackground=true;sender.Start();
         }catch(Exception){state.Text="Spatial PC could not start";details.Text="Repair the installation or reinstall Spatial PC.";}
@@ -160,12 +175,46 @@ internal sealed class HostWindow : Form {
     }
     void Approve(bool value){if(requestId!=null)SendObject(new Dictionary<string,object>{{"command","approve"},{"requestId",requestId},{"accepted",value}});approval.Visible=false;requestId=null;}
     void ClearPairing(){code.Text="";code.Visible=false;cancelPair.Enabled=false;approval.Visible=false;requestId=null;pair.Enabled=enabled;pairHelp.Text="Use the latest Spatial PC on Vision Pro. Enter the four-digit code, then approve here.";}
+    void ClearFocusQr(){var window=focusQr;focusQr=null;focusGeneration=null;if(window!=null){window.Close();window.Dispose();}}
+    void PresentFocusQr(Dictionary<string,object> value){
+        bool presented=false;
+        try {
+            ClearFocusQr();
+            string payload=json.Serialize(new Dictionary<string,object>{{"token",value["token"]},{"digest",value["digest"]}});
+            Bitmap bitmap=FocusQr.Render(payload);payload=null;
+            var picture=new PictureBox{Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,Image=bitmap,BackColor=Color.White};
+            var window=new Form{Text="Spatial PC - Scan with Vision Pro",ClientSize=new Size(620,670),StartPosition=FormStartPosition.CenterParent,ShowInTaskbar=false};
+            window.Controls.Add(picture);window.Controls.Add(new Label{Text="Separate XR system pairing. Scan this code in Vision Pro.\nClose this window to cancel Focus.",Dock=DockStyle.Top,Height=55,TextAlign=ContentAlignment.MiddleCenter});
+            focusQr=window;focusGeneration=Convert.ToString(value["generation"]);
+            window.FormClosed+=(s,e)=>{picture.Image=null;bitmap.Dispose();if(focusQr==window){focusQr=null;focusGeneration=null;Send("stopFocus");}};
+            window.Show(this);presented=window.Visible;
+        } catch(Exception){ClearFocusQr();details.Text="The reviewed QR renderer is unavailable. Focus stopped.";}
+        finally {
+            value.Remove("token");value.Remove("digest");
+            SendObject(new Dictionary<string,object>{{"command","focusBarcodeReceipt"},{"requestId",value["requestId"]},{"accepted",presented}});
+        }
+    }
     void Receive(Dictionary<string,object> value){
         if(quitting||!value.ContainsKey("event"))return;
         string kind=Convert.ToString(value["event"]);
         if(kind=="status") {
+            receivingStatus=true;
+            try{
+                string mode=value.ContainsKey("mediaMode")?Convert.ToString(value["mediaMode"]):"idle";
+                encoder.Enabled=mode=="idle"&&value.ContainsKey("nvencConfigured")&&Convert.ToBoolean(value["nvencConfigured"]);
+                encoder.SelectedIndex=value.ContainsKey("desktopEncoder")&&Convert.ToString(value["desktopEncoder"])=="nvenc"?1:0;
+                if(value.ContainsKey("focus")){
+                    var caps=(Dictionary<string,object>)value["focus"];
+                    focusAvailable=Convert.ToBoolean(caps["available"]);
+                    string phase=Convert.ToString(caps["state"]);
+                    focusStatus.Text=Convert.ToBoolean(caps["configured"])?"XR Focus: "+phase:"XR Focus requires reviewed development components.";
+                    stopFocus.Enabled=phase=="starting"||phase=="ready";
+                }
+            }finally{receivingStatus=false;}
             if(!configured&&value.ContainsKey("preferredAddress")){string preferred=Convert.ToString(value["preferredAddress"]);foreach(var entry in addresses)if(entry.Value==preferred){network.SelectedItem=entry.Key;break;}}
-            enabled=Convert.ToBoolean(value["enabled"]);configured=true;access.Enabled=network.Items.Count>0;
+            enabled=Convert.ToBoolean(value["enabled"]);configured=true;
+            access.Enabled=network.Items.Count>0&&(enabled||development||!xrDevelopment||FirewallPolicy.Configured());
+            startFocus.Enabled=focusAvailable&&network.SelectedItem!=null;
             access.Text=enabled?"Disable access":"Enable access";network.Enabled=!enabled;firewall.Enabled=!enabled;pair.Enabled=enabled&&!code.Visible;
             string connected=value.ContainsKey("connected")?Convert.ToString(value["connected"]):"";
             state.Text=enabled?(connected.Length>0?"Connected to "+connected:"Ready for your Vision Pro"):"Access disabled";
@@ -173,6 +222,12 @@ internal sealed class HostWindow : Form {
             devices.Items.Clear();foreach(var item in (System.Collections.IEnumerable)value["devices"]){var device=(Dictionary<string,object>)item;var row=new ListViewItem(Convert.ToString(device["name"])){Tag=device["id"]};row.SubItems.Add(Convert.ToString(device["pairedAt"]));devices.Items.Add(row);}
             if(!enabled)ClearPairing();
             if(value.ContainsKey("needsNetwork")&&Convert.ToBoolean(value["needsNetwork"])&&network.SelectedItem!=null)Send("network","address",addresses[network.SelectedItem.ToString()]);
+        } else if(kind=="focusBarcode") {
+            if(development||xrDevelopment)PresentFocusQr(value);
+        } else if(kind=="focusBarcodeClosed") {
+            if(focusGeneration==Convert.ToString(value["generation"]))ClearFocusQr();
+        } else if(kind=="focusEnded") {
+            details.Text=Convert.ToString(value["reason"]);
         } else if(kind=="pairingCode") {
             code.Text=Convert.ToString(value["code"]);code.Visible=true;pair.Enabled=false;cancelPair.Enabled=true;pairingUntil=DateTime.UtcNow.AddSeconds(Convert.ToInt32(value["expiresSeconds"]));Reveal();
         } else if(kind=="approval") {
@@ -183,5 +238,5 @@ internal sealed class HostWindow : Form {
     }
     string StartupCommand { get { return "\""+Application.ExecutablePath+"\" --background"; } }
     void SetStartup(){try{using(var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")){if(startup.Checked)key.SetValue("SpatialPC",StartupCommand);else if(String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase))key.DeleteValue("SpatialPC",false);}}catch(Exception){MessageBox.Show(this,"Windows could not update the sign-in preference.","Spatial PC");}}
-    public async Task Quit(){if(quitting)return;quitting=true;timer.Stop();Send("shutdown");outgoing.CompleteAdding();try{if(worker!=null){bool done=await Task.Run(()=>worker.WaitForExit(12000));if(!done)worker.Kill();}}catch(Exception){}tray.Visible=false;tray.Dispose();Close();}
+    public async Task Quit(){if(quitting)return;quitting=true;ClearFocusQr();timer.Stop();Send("shutdown");outgoing.CompleteAdding();try{if(worker!=null){bool done=await Task.Run(()=>worker.WaitForExit(12000));if(!done)worker.Kill();}}catch(Exception){}tray.Visible=false;tray.Dispose();Close();}
 }
