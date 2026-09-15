@@ -44,9 +44,10 @@ struct DeviceSetup:View {
                         Text("Open Spatial PC Host on your PC and choose Pair Device.")
                     }
                     Section("Pairing code") {
-                        TextField("Code shown on your PC",text:$code).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                        TextField("4-digit code",text:$code).keyboardType(.numberPad).textContentType(.oneTimeCode).autocorrectionDisabled()
+                            .onChange(of:code) { _,value in code = String(value.unicodeScalars.filter { (48...57).contains($0.value) }.prefix(4)) }
                         Button("Pair",systemImage:"link") { pair() }
-                            .disabled((try? PairingWire.code(code)) == nil || (manual ? !validAddress : selected == nil))
+                            .disabled((try? PairingV2Wire.code(code)) == nil || (manual ? !validAddress : selected == nil))
                     }
                 }
                 if model.pairing.busy { Section { ProgressView(); Text(status) } }

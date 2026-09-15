@@ -144,7 +144,7 @@ enum PairingWire {
 
 /// Small bounded JSON parser preserves number spelling and rejects duplicate keys,
 /// including escaped aliases. Foundation's dictionary decoding loses those details.
-private struct StrictJSON {
+struct StrictJSON {
     indirect enum Value: Equatable {
         case object([String:Value]), array([Value]), string(String), number(String), literal(String)
     }
