@@ -52,7 +52,7 @@ internal sealed class WizardView : UserControl {
         page.BackColor=Color.White;Controls.Add(page);
         foreach(var label in new[]{Title,Detail,Code,Footnote}) { label.TextAlign=ContentAlignment.MiddleCenter;label.UseMnemonic=false;page.Controls.Add(label); }
         Title.Font=new Font("Segoe UI",25,FontStyle.Bold);Title.ForeColor=Color.FromArgb(20,27,39);
-        Detail.ForeColor=Color.FromArgb(69,77,90);Code.Font=new Font("Consolas",56,FontStyle.Bold);Code.ForeColor=Color.FromArgb(12,18,29);
+        Detail.ForeColor=Color.FromArgb(69,77,90);Code.Font=new Font("Segoe UI Semibold",56,FontStyle.Regular);Code.ForeColor=Color.FromArgb(12,18,29);
         Code.AccessibleName="Four-digit pairing code";Footnote.ForeColor=Color.FromArgb(99,108,122);
         Qr.SizeMode=PictureBoxSizeMode.Zoom;Qr.BackColor=Color.White;Qr.AccessibleName="Apple system pairing QR code";page.Controls.Add(Qr);
         Style(Primary,true);Style(Secondary,false);page.Controls.Add(Primary);page.Controls.Add(Secondary);

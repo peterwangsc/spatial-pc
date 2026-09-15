@@ -92,9 +92,9 @@ internal sealed class HostWindow : Form {
     }
     void Render(){
         var page=new WizardPage();primaryAction="";secondaryAction="";
-        if(focusBitmap!=null){page.Title="Scan with Vision Pro";page.Detail="Apple system pairing";page.Qr=focusBitmap;page.Sensitive=true;page.Secondary="Cancel";secondaryAction="stopFocus";}
+        if(focusBitmap!=null){page.Title="Scan with Vision Pro";page.Qr=focusBitmap;page.Sensitive=true;page.Secondary="Cancel";secondaryAction="stopFocus";}
         else if(requestId!=null){page.Title="Allow this device?";page.Detail=requestName+"\nView and control this PC.";page.Sensitive=true;page.Primary="Allow this device";primaryAction="allow";page.Secondary="Deny";secondaryAction="deny";}
-        else if(pairCode.Length!=0){page.Title="Enter this code";page.Detail="On Vision Pro";page.Code=pairCode;page.Sensitive=true;int remaining=Math.Max(0,(int)(pairingUntil-DateTime.UtcNow).TotalSeconds);page.Footnote=attemptNote.Length!=0?attemptNote:"Expires in "+remaining/60+":"+(remaining%60).ToString("00");page.Secondary="Cancel";secondaryAction="cancel";}
+        else if(pairCode.Length!=0){page.Title="Enter on Vision Pro";page.Code=pairCode;page.Sensitive=true;int remaining=Math.Max(0,(int)(pairingUntil-DateTime.UtcNow).TotalSeconds);page.Footnote=attemptNote.Length!=0?attemptNote:"Expires in "+remaining/60+":"+(remaining%60).ToString("00");page.Secondary="Cancel";secondaryAction="cancel";}
         else if(error.Length!=0){page.Title="Couldn’t finish";page.Detail=error;page.Primary=worker!=null&&worker.HasExited?"Quit Spatial PC":"Back";primaryAction=page.Primary=="Back"?"back":"quit";}
         else if(pending.Length!=0){page.Title=pending=="approve"?"Adding device…":pending=="pair"?"Getting code…":pending=="cancel"?"Canceling…":pending=="setup"?"Setting up…":"Enabling access…";page.Busy=true;if(pending=="approve"||pending=="pair"){page.Sensitive=true;page.Secondary="Cancel";secondaryAction="cancel";}}
         else if(pairedDone){page.Title="Device added";page.Detail="Ready on Vision Pro";page.Primary="Done";primaryAction="done";}
