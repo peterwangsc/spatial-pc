@@ -116,8 +116,12 @@ final class XRFocusSession {
                 try await client.connect(host:host)
                 self.record("control.connected")
                 let capabilities = try await client.request("capabilities")
-                guard capabilities["runtimeConfigured"] as? Bool == true,
-                      capabilities["accessEnabled"] as? Bool == true else { throw FocusControlClient.Failure.rejected("unsupported") }
+                guard capabilities["runtimeConfigured"] as? Bool == true else {
+                    throw FocusControlClient.Failure.rejected("runtimeUnavailable")
+                }
+                guard capabilities["accessEnabled"] as? Bool == true else {
+                    throw FocusControlClient.Failure.rejected("accessDisabled")
+                }
                 if capabilities["focusAllowed"] as? Bool != true {
                     self.stage = "Approve on your PC"
                     let permission = try await client.request("focus.requestPermission",timeout:65)
@@ -191,6 +195,8 @@ final class XRFocusSession {
         switch failure {
         case .rejected("busy"): return "This PC is already in use."
         case .rejected("permissionRequired"): return "Immersive Mode was not allowed on your PC."
+        case .rejected("runtimeUnavailable"): return "Immersive Mode files are missing or invalid on this PC."
+        case .rejected("accessDisabled"): return "Access is disabled on this PC."
         case .rejected("unsupported"): return "Immersive Mode is unavailable on this PC."
         case .authentication: return "Could not verify this PC."
         default: return "Could not start Immersive Mode. Check the Windows host."
