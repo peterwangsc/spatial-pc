@@ -89,17 +89,19 @@ namespace FoveatedStreaming.WindowsSample {
   }
   public void Dispose() {
    if(Interlocked.Exchange(ref disposed,1)!=0)return;
+   bool exitConfirmed=true;
    try {job?.Dispose();} finally {
     Close(ref input);
     if(process!=IntPtr.Zero) {
-     if(WaitForSingleObject(process,2000)!=0){TerminateProcess(process,74);WaitForSingleObject(process,1000);}
+     if(WaitForSingleObject(process,2000)!=0){TerminateProcess(process,74);exitConfirmed=WaitForSingleObject(process,1000)==0;}
      Close(ref process);
     }
     // Job close kills descendants, including pipe writers; drain tasks own read handles.
     foreach(var task in new[]{stdoutDrain,stderrDrain})if(task!=null)try{task.Wait(1000);}catch(AggregateException){}
    }
    GC.SuppressFinalize(this);
+   if(!exitConfirmed)throw new InvalidOperationException("Owned child exit was not confirmed");
   }
-  ~ContainedChild(){Dispose();}
+  ~ContainedChild(){try{Dispose();}catch{}}
  }
 }
