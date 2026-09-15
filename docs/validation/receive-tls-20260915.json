@@ -1,0 +1,54 @@
+{
+  "fixtureClosed": true,
+  "retainedPayloads": false,
+  "runs": [
+    {
+      "boundary": "Mac synthetic loopback TLS, ordered bounded payloads; no H264, Windows input, Wi-Fi or headset latency",
+      "bytes": 65536000,
+      "frames": 1000,
+      "mode": "baseline",
+      "receiveP50MS": 0.030875,
+      "receiveP95MS": 0.064208,
+      "receiveP99MS": 0.114667,
+      "seconds": 0.063304334,
+      "tcpNoDelay": false,
+      "tls": "1.3 minimum, private fixture CA and localhost name verified"
+    },
+    {
+      "boundary": "Mac synthetic loopback TLS, ordered bounded payloads; no H264, Windows input, Wi-Fi or headset latency",
+      "bytes": 65536000,
+      "frames": 1000,
+      "mode": "candidate",
+      "receiveP50MS": 0.023958,
+      "receiveP95MS": 0.048917,
+      "receiveP99MS": 0.086584,
+      "seconds": 0.053493208,
+      "tcpNoDelay": true,
+      "tls": "1.3 minimum, private fixture CA and localhost name verified"
+    },
+    {
+      "boundary": "Mac synthetic loopback TLS, ordered bounded payloads; no H264, Windows input, Wi-Fi or headset latency",
+      "bytes": 65536000,
+      "frames": 1000,
+      "mode": "candidate",
+      "receiveP50MS": 0.024,
+      "receiveP95MS": 0.052292,
+      "receiveP99MS": 0.077666,
+      "seconds": 0.053503084,
+      "tcpNoDelay": true,
+      "tls": "1.3 minimum, private fixture CA and localhost name verified"
+    },
+    {
+      "boundary": "Mac synthetic loopback TLS, ordered bounded payloads; no H264, Windows input, Wi-Fi or headset latency",
+      "bytes": 65536000,
+      "frames": 1000,
+      "mode": "baseline",
+      "receiveP50MS": 0.027375,
+      "receiveP95MS": 0.03925,
+      "receiveP99MS": 0.112834,
+      "seconds": 0.053034417,
+      "tcpNoDelay": false,
+      "tls": "1.3 minimum, private fixture CA and localhost name verified"
+    }
+  ]
+}

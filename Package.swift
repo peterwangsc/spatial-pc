@@ -7,7 +7,7 @@ let package = Package(name: "SpatialPCValidation", platforms: [.macOS(.v15)], ta
     .target(name:"SpatialPake",path:"shared/pairing",exclude:["boringssl.lock.json","BORINGSSL-LICENSE","README.md"],sources:["spatial_pake.c"],publicHeadersPath:"include",
         cSettings:[.unsafeFlags(["-I",dependencyPath+"/include","-DBORINGSSL_PREFIX=SPATIALPC_BSSL"])],
         linkerSettings:[.linkedLibrary("c++"),.unsafeFlags([root.appendingPathComponent(".local/pairing/macosx/libcrypto.a").path])]),
-    .target(name:"StreamCore", path:"visionos/SpatialPC/Streaming", sources:["StreamWire.swift", "H264Decoder.swift", "VideoColorConversion.swift","InputWire.swift"]),
+    .target(name:"StreamCore", path:"visionos/SpatialPC/Streaming", sources:["ExactStreamReader.swift","StreamWire.swift", "H264Decoder.swift", "VideoColorConversion.swift","InputWire.swift"]),
     .target(name:"PairingCore",dependencies:["SpatialPake"],path:"visionos/SpatialPC/Pairing",exclude:["PairingClient.swift"],sources:["PairingWire.swift","PairedHostStore.swift","PairingPAKE.swift","PairingV2Wire.swift","PairingAttemptBudget.swift"]),
     .testTarget(name:"PairingCoreTests",dependencies:["PairingCore"],path:"tests/PairingCoreTests",resources:[.copy("pairing-v1-test-vector.json"),.copy("pairing-v2-test-vector.json")]),
     .testTarget(name:"StreamCoreTests", dependencies:["StreamCore"], path:"tests/StreamCoreTests")
