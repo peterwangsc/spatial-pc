@@ -134,6 +134,22 @@ The System32 version-only query on the existing driver returned maximum 194
 actual encode behavior, EOS/cancellation under driver load, and fallback on an
 unsupported adapter still require coordinated hardware validation.
 
+Bounded Mac review of implementation6acb7d5 found no blocking source issue for
+continued isolated development. Mac independently compiled the exact shared
+transaction/ownership fixture with clang++ C++20, warnings-as-errors and O2:
+12 cases passed without GPU work. Mac did not rerun the Windows adapter,
+configuration or deadline fixtures. This review is not live-switch clearance.
+
+Before a performance comparison, prove first-frame delivery and repeated output
+with exactly one outstanding submission, followed by idle stop/EOS. Treat
+NEED_MORE_INPUT or an event timeout as failure, never as a running encoder or
+reason to relax ownership. Verify decoded SDR matrix/range/colors against the
+current client; unchanged conversion with unspecified VUI alone is insufficient.
+Exercise cancellation, blocked output, device loss and startup fallback in a
+coordinated driver fixture. Measure the Sleep(1) producer polling delay and the
+serialized production/encode/pipe transaction explicitly; four allocated slots
+do not imply four in-flight frames.
+
 For the later matched 60fps comparison, preserve resolution, cursor content,
 motion workload, color conversion, bitrate, driver, client, and transport. Log
 the selected backend, API/capabilities, settings and binary hashes. Record
