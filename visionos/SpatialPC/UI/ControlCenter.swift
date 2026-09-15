@@ -28,12 +28,16 @@ struct ControlCenter: View {
         }
         .frame(minWidth:700,minHeight:480)
         .sheet(isPresented:$settingsOpen) { settings }
-        .sheet(isPresented:$devicesOpen) { DeviceSetup(model:model) }
+        .sheet(isPresented:$devicesOpen) {
+            DeviceSetup(model:model) { devicesOpen = false; model.connectDesktop() }
+        }
         .task {
             guard !model.startupHandled else { return }
             model.startupHandled = true
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--desktop-preview") {
+            if ProcessInfo.processInfo.arguments.contains("--device-setup-preview") {
+                devicesOpen = true
+            } else if ProcessInfo.processInfo.arguments.contains("--desktop-preview") {
                 model.destination = .desktop
                 openWindow(id:"pc-desktop",value:"primary")
             } else if ProcessInfo.processInfo.arguments.contains("--lab-connect") {
