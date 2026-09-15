@@ -58,3 +58,17 @@ The post-readiness disconnect remains unresolved. Host runtime readiness and
 scene process creation do not establish successful OpenXR initialization or
 headset frames. Apple and Windows now keep bounded stage metadata so subsequent
 attempts can locate that failure without retaining credentials or desktop content.
+
+Build 29 retains the cancellation correction and adds presentation appearance,
+disappearance, and bounded underlying-error context. It is installed but has not
+been physically tested. An independent source review found no further mismatch
+between its automatic presentation setup and the Apple sample.
+
+The PC completed a separate non-rendering probe using the installed Manager 6.1.0,
+Runtime 6.2.3, and runtime configuration. OpenXR instance, system, graphics
+requirements, D3D11 device, and session creation succeeded. A loopback TLS 1.3
+handshake presented a certificate matching the Manager fingerprint. The probe
+substituted its own scene executable, sent no application payload, and cleaned up
+all owned children. These results do not validate the installed renderer, Apple
+authorization or signaling, AVP network reachability, or streamed frames. No
+additional physical test or successful XR connection is claimed.
