@@ -79,7 +79,7 @@ internal sealed class WizardView : UserControl {
     static void Style(Button b,bool primary){b.FlatStyle=FlatStyle.Flat;b.FlatAppearance.BorderSize=0;b.Height=46;b.Font=new Font("Segoe UI",11,primary?FontStyle.Bold:FontStyle.Regular);b.BackColor=primary?Color.FromArgb(31,81,225):Color.FromArgb(242,245,249);b.ForeColor=primary?Color.White:Color.FromArgb(51,64,85);b.UseVisualStyleBackColor=false;b.Cursor=Cursors.Hand;}
     internal void Present(WizardPage value) {
         sensitive=value.Sensitive;if(sensitive)ShowSettings(false);
-        Title.Text=value.Title;Detail.Text=value.Detail;Code.Text=value.Code;Footnote.Text=value.Footnote;
+        Title.Text=value.Title;Detail.Text=value.Detail;Code.Text=value.Code;Footnote.Text=value.Footnote;Footnote.Visible=value.Footnote.Length!=0;
         Code.Visible=value.Code.Length!=0;Qr.Image=value.Qr;Qr.Visible=value.Qr!=null;
         Primary.Text=value.Primary;Primary.Visible=value.Primary.Length!=0;Primary.Enabled=!value.Busy;
         Secondary.Text=value.Secondary;Secondary.Visible=value.Secondary.Length!=0;Secondary.Enabled=true;
