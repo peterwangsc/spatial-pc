@@ -282,6 +282,7 @@ struct DeviceSetup: View {
         selected = DiscoveredHost(name: "Gaming PC", domain: "local.")
         switch arguments[index + 1] {
         case "code": step = .code; code = "1234"
+        case "code-empty": step = .code; focusedField = .code
         case "code-error":
             step = .code
             selected = DiscoveredHost(name: "A long Windows computer name for accessibility layout validation", domain: "local.")

@@ -8,7 +8,7 @@ The AppModel-owned PairingClient, PAKE wire, attempt budget, certificate validat
 
 Content can scroll at larger text sizes while the primary action remains reachable. Local debug simulator fixtures render code, approval, completion and a long-name/error layout without enrollment or desktop connection. They use public fixture data and are not pairing success evidence.
 
-Validation: visionOS XR device and Debug simulator builds pass. Simulator layouts inspected for preparation, GolfCore-style code boxes, approval, completion, and a long PC name/error with the largest accessibility text category. The error page scrolls at that size; Confirm Code remains outside the scroll area. Source review found no blocking pairing lifecycle issue. Actual new-wizard enrollment and input accessibility interaction remain hardware/functional checks. The prepared XR hardware build remains separate until this UI is integrated.
+Validation: visionOS XR device and Debug simulator builds pass. Simulator layouts inspected for preparation, GolfCore-style code boxes, approval, completion, automatic native keyboard focus with the first empty box highlighted, and a long PC name/error with the largest accessibility text category. The error page scrolls at that size; Confirm Code remains outside the scroll area. Source review found no blocking pairing lifecycle issue. Actual new-wizard enrollment and input accessibility interaction remain hardware/functional checks. The prepared XR hardware build remains separate until this UI is integrated.
 
 ## Remaining unified XR step
 
