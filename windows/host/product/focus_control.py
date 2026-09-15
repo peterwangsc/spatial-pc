@@ -296,7 +296,9 @@ class ControlSession:
         if not self.live:return
         self.live = False
         self.begin_cleanup()
-        if self.runner and self.runner is not asyncio.current_task(): self.runner.cancel()
+        # This also cancels the reader when overflow is detected by that same
+        # reader. Merely marking it dead could otherwise leave read() suspended.
+        if self.runner and not self.runner.done(): self.runner.cancel()
 
     def begin_cleanup(self):
         if self.cleanup_task is None:

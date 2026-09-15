@@ -269,7 +269,8 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         await self.prepare()
         self.writer.block = asyncio.Event()
         for _ in range(20): self.send('heartbeat')
-        await asyncio.wait_for(self.task, 2)
+        done,_=await asyncio.wait([self.task],timeout=.5)
+        self.assertIn(self.task,done,'overflow must close without the test canceling the reader')
         self.worker.start_desktop.assert_awaited_once()
 
     async def test_heartbeat_does_not_extend_setup_or_media_deadline(self):
