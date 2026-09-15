@@ -39,7 +39,16 @@ final class AppModel {
     func handleScenePhase(_ phase: ScenePhase) {
         #if SPATIALPC_XR && canImport(FoveatedStreaming)
         applicationActive = phase == .active
-        if phase == .background { xrFocus.stop() }
+        if phase == .background {
+            let focusWasActive = xrFocus.gate.busy
+            xrFocus.stop()
+            // Permission may still be pending before the ordinary stream was
+            // paused. Do not keep that desktop/input session alive while away.
+            if focusWasActive {
+                reconnectOnForeground = false
+                stream.stopControl(); stream.disconnect(); renderer.stop()
+            }
+        }
         #endif
         if phase != .active { stream.stopControl() }
         if phase == .background && !transitionPending {
