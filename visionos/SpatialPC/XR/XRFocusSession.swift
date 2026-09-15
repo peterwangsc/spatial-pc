@@ -152,6 +152,22 @@ final class XRFocusSession {
                 else { category = "other" }
                 let nsError = error as NSError
                 self.record("connect.error." + category, code:nsError.code,errorDomain:nsError.domain)
+                // Preserve only recognized categories and standard nested codes,
+                // never the framework's arbitrary localized text or userInfo.
+                if let reason = error as? FoveatedStreamingSession.DisconnectReason {
+                    let text = (reason.errorDescription ?? "").prefix(512).lowercased()
+                    for word in ["certificate", "authentication", "permission", "network", "timeout", "refused",
+                                 "version", "codec", "configuration", "unsupported", "presentation", "immersive",
+                                 "space", "signaling", "protocol", "cancel", "server", "render"] where text.contains(word) {
+                        self.record("apple.descriptionContains." + word)
+                    }
+                }
+                var nested = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+                for depth in 1...3 {
+                    guard let current = nested else { break }
+                    self.record("connect.underlying" + String(depth),code:current.code,errorDomain:current.domain)
+                    nested = current.userInfo[NSUnderlyingErrorKey] as? NSError
+                }
                 if !Task.isCancelled { self.validationError = Self.message(for:error) }
                 throw error
             }
@@ -287,8 +303,9 @@ struct XRFocusSurface: View {
                 .padding(12).glassBackgroundEffect()
             }
         }
-        .onAppear { model.isImmersed = true; model.transitionPending = false }
+        .onAppear { model.xrFocus.record("presentation.appeared"); model.isImmersed = true; model.transitionPending = false }
         .onDisappear {
+            model.xrFocus.record("presentation.disappeared")
             model.isImmersed = false
             model.xrFocus.gate.stop()
         }

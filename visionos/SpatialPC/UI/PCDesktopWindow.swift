@@ -51,6 +51,7 @@ struct PCDesktopWindow: View {
                 model.stream.stopControl()
                 #if canImport(FoveatedStreaming)
                 if model.xrFocus.gate.busy && model.destination != .focus {
+                    model.xrFocus.record("desktopWindow.disappearedStopsImmersive")
                     model.xrFocus.returnToDesktop = false
                     model.cancelDesktopRestoration()
                     model.xrFocus.gate.stop()
