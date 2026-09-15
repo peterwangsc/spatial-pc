@@ -18,6 +18,7 @@ private final class PeerCertificate: @unchecked Sendable {
     @ObservationIgnored private var operation:Task<Void,Never>?
     @ObservationIgnored private var channel:PairingChannel?
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var attemptBudget = PairingAttemptBudget()
     var busy:Bool { [.connecting,.verifying,.approval].contains(phase) }
     func cancel() {
         generation = UUID(); operation?.cancel(); operation = nil; channel?.cancel(); channel = nil
@@ -37,7 +38,8 @@ private final class PeerCertificate: @unchecked Sendable {
             var stage = "code"
             defer { if let key,!committed { DeviceKeychain.removeIdentity(keyTag:key.tag,certificate:nil) } }
             do {
-                let secret = try PairingWire.code(code)
+                let secret = try PairingV2Wire.code(code)
+                try attemptBudget.consume()
                 let name = "Vision Pro"
                 stage = "create-key"
                 let identity = try DeviceKeychain.createIdentity(); key = identity
@@ -48,22 +50,28 @@ private final class PeerCertificate: @unchecked Sendable {
                 guard self.generation == request else { throw CancellationError() }
                 stage = "proof"
                 self.phase = .verifying
-                guard case .challenge(let challenge) = try await channel.read(),let leaf = channel.peerCertificate else { throw PairingWire.Failure.invalidMessage }
-                guard !store.hosts.contains(where:{ $0.id == challenge.hostID }) else { throw PairingWire.Failure.authentication }
+                guard case .challenge(let challenge) = try await channel.read(),let leaf = channel.peerCertificate else { throw PairingV2Wire.Failure.invalidMessage }
+                guard !store.hosts.contains(where:{ $0.id == challenge.hostID }) else { throw PairingV2Wire.Failure.authentication }
                 var nonce = Data(count:32)
-                guard nonce.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault,32,$0.baseAddress!) }) == errSecSuccess else { throw PairingWire.Failure.authentication }
-                let transcript = try PairingWire.transcript(challenge:challenge,leafSHA256:Data(SHA256.hash(data:leaf)),clientNonce:nonce,publicKey:identity.publicPoint,name:name)
-                let proof = try PairingWire.proof(secret:secret,transcript:transcript,server:false)
-                let signature = try identity.sign(PairingWire.signatureMessage(transcript))
-                try await channel.send(PairingWire.encodeProof(clientNonce:nonce,publicKey:identity.publicPoint,name:name,proof:proof,signature:signature))
-                guard case .pending(let serverProof) = try await channel.read() else { throw PairingWire.Failure.authentication }
-                try PairingWire.verifyServer(serverProof,secret:secret,transcript:transcript)
+                guard nonce.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault,32,$0.baseAddress!) }) == errSecSuccess else { throw PairingV2Wire.Failure.authentication }
+                let context = try PairingV2Wire.context(challenge:challenge,leafSHA256:Data(SHA256.hash(data:leaf)))
+                let names = try PairingV2Wire.names(context:context)
+                let exchange = try PairingPAKE(pin:secret,clientName:names.client,serverName:names.server)
+                let transcript = try PairingV2Wire.transcript(context:context,clientNonce:nonce,publicKey:identity.publicPoint,
+                    name:name,clientMessage:exchange.message,serverMessage:challenge.serverMessage)
+                let confirmationKey = try exchange.confirmationKey(peerMessage:challenge.serverMessage,transcript:transcript)
+                let proof = PairingV2Wire.proof(key:confirmationKey,transcript:transcript,server:false)
+                let signature = try identity.sign(PairingV2Wire.signatureMessage(transcript))
+                try await channel.send(PairingV2Wire.encodeProof(clientNonce:nonce,publicKey:identity.publicPoint,name:name,
+                    clientMessage:exchange.message,proof:proof,signature:signature))
+                guard case .pending(let serverProof) = try await channel.read() else { throw PairingV2Wire.Failure.authentication }
+                try PairingV2Wire.verifyServer(serverProof,key:confirmationKey,transcript:transcript)
                 guard self.generation == request else { throw CancellationError() }
                 stage = "approval-response"
                 self.phase = .approval
-                guard case .paired(let credentials) = try await channel.read(timeout:60) else { throw PairingWire.Failure.authentication }
+                guard case .paired(let credentials) = try await channel.read(timeout:60) else { throw PairingV2Wire.Failure.authentication }
                 guard credentials.hostID == challenge.hostID, credentials.serverCertificate == leaf,
-                      self.generation == request else { throw PairingWire.Failure.authentication }
+                      self.generation == request else { throw PairingV2Wire.Failure.authentication }
                 stage = "server-trust"
                 try Self.validateServer(credentials)
                 stage = "client-certificate"
@@ -73,7 +81,7 @@ private final class PeerCertificate: @unchecked Sendable {
                 stage = "find-identity"
                 _ = try DeviceKeychain.identity(for:saved)
                 stage = "save-host"
-                try store.add(saved); committed = true
+                try store.add(saved); committed = true; attemptBudget.completed()
                 Self.recordResult(stage:"complete",keychainStatus:nil)
                 self.phase = .paired; self.error = nil; self.channel = nil
             } catch {
@@ -82,8 +90,12 @@ private final class PeerCertificate: @unchecked Sendable {
                 if case DeviceKeychain.Failure.status(let status) = error { keychainStatus = status }
                 Self.recordResult(stage:stage,keychainStatus:keychainStatus)
                 self.channel = nil; self.phase = .failed
-                if let failure = error as? PairingWire.Failure, failure == .invalidCode {
-                    self.error = "Enter the complete pairing code shown on your PC."
+                if error is PairingChannel.VersionMismatch {
+                    self.error = "Update Spatial PC on your PC to use four-digit pairing."
+                } else if error is PairingAttemptBudget.Failure {
+                    self.error = "Too many pairing attempts. Wait three minutes, then get a new code from your PC."
+                } else if let failure = error as? PairingV2Wire.Failure, failure == .invalidCode {
+                    self.error = "Enter the four-digit code shown on your PC."
                 } else {
                     self.error = "Pairing did not finish. Open a new pairing code on your PC and try again."
                 }
@@ -99,18 +111,19 @@ private final class PeerCertificate: @unchecked Sendable {
             try? data.write(to:root.appendingPathComponent("pairing-diagnostics.json"),options:.atomic)
         }
     }
-    private static func validateServer(_ credentials:PairingWire.Credentials) throws {
+    private static func validateServer(_ credentials:PairingV2Wire.Credentials) throws {
         guard let leaf = SecCertificateCreateWithData(nil,credentials.serverCertificate as CFData),
-              let root = SecCertificateCreateWithData(nil,credentials.caCertificate as CFData) else { throw PairingWire.Failure.authentication }
+              let root = SecCertificateCreateWithData(nil,credentials.caCertificate as CFData) else { throw PairingV2Wire.Failure.authentication }
         var trust:SecTrust?
         guard SecTrustCreateWithCertificates(leaf,SecPolicyCreateSSL(true,credentials.serverName as CFString),&trust) == errSecSuccess,let trust,
               SecTrustSetAnchorCertificates(trust,[root] as CFArray) == errSecSuccess,
               SecTrustSetAnchorCertificatesOnly(trust,true) == errSecSuccess,
-              SecTrustEvaluateWithError(trust,nil) else { throw PairingWire.Failure.authentication }
+              SecTrustEvaluateWithError(trust,nil) else { throw PairingV2Wire.Failure.authentication }
     }
 }
 
 @MainActor private final class PairingChannel {
+    struct VersionMismatch:Error {}
     private let connection:NWConnection
     private let leaf = PeerCertificate()
     private var ready:CheckedContinuation<Void,Error>?
@@ -118,9 +131,9 @@ private final class PeerCertificate: @unchecked Sendable {
     init(endpoint:NWEndpoint) {
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions,.TLSv13)
-        sec_protocol_options_add_tls_application_protocol(tls.securityProtocolOptions,"spatialpc-pair/1")
+        sec_protocol_options_add_tls_application_protocol(tls.securityProtocolOptions,"spatialpc-pair/2")
         let leaf = self.leaf
-        // This exception exists ONLY for enrollment. The 128-bit-code proof binds
+        // This exception exists ONLY for enrollment. The PAKE-derived confirmation binds
         // this exact leaf before accepting credentials; streams never use it.
         sec_protocol_options_set_verify_block(tls.securityProtocolOptions,{ _,wrapped,complete in
             let trust = sec_trust_copy_ref(wrapped).takeRetainedValue()
@@ -144,7 +157,7 @@ private final class PeerCertificate: @unchecked Sendable {
                             self.ready = nil
                             guard let metadata = self.connection.metadata(definition:NWProtocolTLS.definition) as? NWProtocolTLS.Metadata,
                                   let protocolName = sec_protocol_metadata_get_negotiated_protocol(metadata.securityProtocolMetadata),
-                                  String(cString:protocolName) == "spatialpc-pair/1" else { pending.resume(throwing:PairingWire.Failure.authentication); self.cancel(); return }
+                                  String(cString:protocolName) == "spatialpc-pair/2" else { pending.resume(throwing:VersionMismatch()); self.cancel(); return }
                             pending.resume()
                         case .failed(let error): self.ready = nil; pending.resume(throwing:error)
                         case .cancelled: self.ready = nil; pending.resume(throwing:CancellationError())
@@ -164,10 +177,10 @@ private final class PeerCertificate: @unchecked Sendable {
         defer { timer.cancel() }
         return try await withTaskCancellationHandler(operation:operation,onCancel:{ [connection] in connection.cancel() })
     }
-    func read(timeout:UInt64 = 5) async throws -> PairingWire.Message {
+    func read(timeout:UInt64 = 5) async throws -> PairingV2Wire.Message {
         try await deadline(timeout) {
-            let length = try PairingWire.payloadLength(await self.exact(8))
-            return try PairingWire.decode(await self.exact(length))
+            let length = try PairingV2Wire.payloadLength(await self.exact(8))
+            return try PairingV2Wire.decode(await self.exact(length))
         }
     }
     private func exact(_ count:Int) async throws -> Data {
@@ -178,7 +191,7 @@ private final class PeerCertificate: @unchecked Sendable {
                 connection.receive(minimumIncompleteLength:amount,maximumLength:amount) { data,_,finished,error in
                     if let error { continuation.resume(throwing:error) }
                     else if let data,!data.isEmpty { continuation.resume(returning:data) }
-                    else { continuation.resume(throwing:PairingWire.Failure.invalidMessage) }
+                    else { continuation.resume(throwing:PairingV2Wire.Failure.invalidMessage) }
                 }
             }
             result.append(part)

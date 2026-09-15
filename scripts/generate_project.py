@@ -18,7 +18,7 @@ for path in sorted((root/'visionos/SpatialPC').rglob('*')):
  rel=path.relative_to(root/'visionos').as_posix()
  ref=put(rel,'PBXFileReference',lastKnownFileType='sourcecode.swift' if path.suffix=='.swift' else 'sourcecode.metal',path=rel,sourceTree='<group>')
  files.append(ref);builds.append(put('build:'+rel,'PBXBuildFile',fileRef=ref))
-for rel,kind in [('SpatialPC/Assets.xcassets','folder.assetcatalog'),('SpatialPC/PrivacyInfo.xcprivacy','text.xml')]:
+for rel,kind in [('SpatialPC/Assets.xcassets','folder.assetcatalog'),('SpatialPC/PrivacyInfo.xcprivacy','text.xml'),('SpatialPC/ThirdPartyNotices.txt','text')]:
  ref=put(rel,'PBXFileReference',lastKnownFileType=kind,path=rel,sourceTree='<group>')
  files.append(ref);resources.append(put('build:'+rel,'PBXBuildFile',fileRef=ref))
 resourcephase=put('resources','PBXResourcesBuildPhase',buildActionMask=2147483647,files=resources,runOnlyForDeploymentPostprocessing=0)
@@ -30,6 +30,7 @@ frameworks=put('frameworks','PBXFrameworksBuildPhase',buildActionMask=2147483647
 configs=[]
 for config in ['Debug','Lab','Release']:
  settings={'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','ALWAYS_SEARCH_USER_PATHS':'NO','PRODUCT_NAME':'SpatialPC','PRODUCT_BUNDLE_IDENTIFIER':os.environ.get('SPATIAL_PC_BUNDLE_ID','com.example.spatialpc'),'DEVELOPMENT_TEAM':os.environ.get('SPATIAL_PC_TEAM',''),'CODE_SIGN_STYLE':'Automatic','SDKROOT':'xros','SUPPORTED_PLATFORMS':'xros xrsimulator','TARGETED_DEVICE_FAMILY':'7','XROS_DEPLOYMENT_TARGET':'2.0','SWIFT_VERSION':'5.0','SWIFT_STRICT_CONCURRENCY':'complete','INFOPLIST_FILE':'SpatialPC/Info.plist','GENERATE_INFOPLIST_FILE':'NO','ENABLE_USER_SCRIPT_SANDBOXING':'YES','MARKETING_VERSION':'1.0.0','CURRENT_PROJECT_VERSION':'1','SWIFT_OPTIMIZATION_LEVEL':'-Onone' if config=='Debug' else '-O','DEBUG_INFORMATION_FORMAT':'dwarf-with-dsym','MTL_ENABLE_DEBUG_INFO':'INCLUDE_SOURCE' if config=='Debug' else 'NO','SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG' if config in ('Debug','Lab') else ''}
+ settings.update({'ARCHS':'arm64','SWIFT_INCLUDE_PATHS':'$(inherited) $(PROJECT_DIR)/../shared/pairing/include','OTHER_LDFLAGS':'$(inherited) -L$(PROJECT_DIR)/../.local/pairing/$(PLATFORM_NAME) -lspatial_pake -lc++ -Wl,-dead_strip'})
  configs.append(put('config:'+config,'XCBuildConfiguration',buildSettings=settings,name=config))
 configlist=put('configs','XCConfigurationList',buildConfigurations=configs,defaultConfigurationIsVisible=0,defaultConfigurationName='Release')
 target=put('target','PBXNativeTarget',buildConfigurationList=configlist,buildPhases=[sources,frameworks,resourcephase],buildRules=[],dependencies=[],name='SpatialPC',productName='SpatialPC',productReference=product,productType='com.apple.product-type.application')
