@@ -21,10 +21,11 @@ internal sealed class HostWindow : Form {
     readonly BlockingCollection<string> outgoing=new BlockingCollection<string>(16);
     readonly bool background,development,xrDevelopment,fixture;
     Process worker;
-    bool enabled,quitting,configured,networkReady,receivingStatus,firewallReady,pairedDone,focusActive,pairingExpected;
+    bool enabled,quitting,configured,networkReady,receivingStatus,firewallReady,pairedDone,focusActive,pairingExpected,focusQrAllowed,focusStopping;
     int deviceCount;
     string pending="",error="",connected="",pairCode="",requestId,requestName="",primaryAction="",secondaryAction="",focusGeneration;
     string attemptNote="";
+    string retiredFocusGeneration;
     DateTime pairingUntil=DateTime.MinValue,approvalUntil=DateTime.MinValue,nextNetworkCheck=DateTime.MinValue;
     Bitmap focusBitmap;
 
@@ -41,24 +42,32 @@ internal sealed class HostWindow : Form {
         view.Access.Click+=async(s,e)=>await Act(enabled?"disable":"enable");
         view.SetupNetwork.Click+=async(s,e)=>await ConfigureFirewall();
         view.Devices.SelectedIndexChanged+=(s,e)=>view.Revoke.Enabled=view.Devices.SelectedItems.Count==1;
-        view.Revoke.Click+=(s,e)=>{if(view.Devices.SelectedItems.Count==1&&MessageBox.Show(this,"Revoke this device and disconnect its access?","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes)Send("revoke","deviceId",view.Devices.SelectedItems[0].Tag);};
+        view.Revoke.Click+=(s,e)=>ConfirmRevoke((id,name)=>MessageBox.Show(this,"Revoke "+name+"?\nThis disconnects its access.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes);
         if(!fixture)using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))view.Startup.Checked=key!=null&&String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase);
         view.Startup.CheckedChanged+=(s,e)=>SetStartup();view.Quit.Click+=async(s,e)=>await Quit();
         view.Encoder.SelectedIndexChanged+=(s,e)=>{if(!receivingStatus)Send("desktopEncoder","value",view.Encoder.SelectedIndex==1?"nvenc":"mf");};
-        view.StartFocus.Click+=(s,e)=>{if(MessageBox.Show(this,"Open a three-minute XR development window? Vision Pro uses separate system QR pairing. XR media is not encrypted. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes){Send("startFocus");view.ShowSettings(false);}};
-        view.StopFocus.Click+=(s,e)=>{ClearFocusQr();Send("stopFocus");};
+        view.StartFocus.Click+=(s,e)=>{if(MessageBox.Show(this,"Open a three-minute XR development window? Vision Pro uses separate system QR pairing. XR media is not encrypted. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes)BeginFocus();};
+        view.StopFocus.Click+=(s,e)=>StopFocus();
         tray.Icon=Icon;tray.Text="Spatial PC — access disabled";tray.Visible=!fixture;tray.DoubleClick+=(s,e)=>Reveal();
-        var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>Send("enable","value",false));menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
+        var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>{InvalidateFocus();Send("enable","value",false);});menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
         if(!fixture)Shown+=(s,e)=>{LoadNetworks();firewallReady=development||FirewallPolicy.Configured();if(firewallReady||xrDevelopment)StartWorker();Render();if(background)Hide();};
         FormClosing+=async(s,e)=>{if(quitting)return;e.Cancel=true;if(e.CloseReason==CloseReason.WindowsShutDown||e.CloseReason==CloseReason.TaskManagerClosing)await Quit();else{CancelSensitive();Hide();}};
         timer.Interval=1000;timer.Tick+=(s,e)=>Tick();if(!fixture)timer.Start();Render();
     }
     public void Reveal(){if(fixture)return;Show();WindowState=FormWindowState.Normal;Activate();}
-    void CancelSensitive(){if(focusBitmap!=null){ClearFocusQr();Send("stopFocus");}if(pairingExpected){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";}Render();}
+    void ConfirmRevoke(Func<string,string,bool> confirm){
+        if(view.Devices.SelectedItems.Count!=1)return;
+        var selected=view.Devices.SelectedItems[0];string id=Convert.ToString(selected.Tag),name=selected.Text;
+        if(confirm(id,name)&&view.Devices.Items.Cast<ListViewItem>().Any(row=>Convert.ToString(row.Tag)==id)){if(focusActive||focusQrAllowed)InvalidateFocus();Send("revoke","deviceId",id);}
+    }
+    void BeginFocus(){if(focusStopping||focusActive||focusQrAllowed)return;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;focusGeneration=null;focusQrAllowed=true;view.StartFocus.Enabled=false;Send("startFocus");view.ShowSettings(false);Render();}
+    void InvalidateFocus(){focusQrAllowed=false;focusStopping=true;view.StartFocus.Enabled=false;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;ClearFocusQr();}
+    void StopFocus(){InvalidateFocus();Send("stopFocus");Render();}
+    void CancelSensitive(){if(focusBitmap!=null||focusQrAllowed)StopFocus();if(pairingExpected){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";}Render();}
     void Tick(){
         if(!fixture&&enabled&&!development&&DateTime.UtcNow>=nextNetworkCheck){nextNetworkCheck=DateTime.UtcNow.AddSeconds(5);try{
-            if(view.Network.SelectedItem==null||!NetworkPolicy.PrivateAddresses().ContainsValue(addresses[view.Network.SelectedItem.ToString()])){Send("enable","value",false);Fail("Your Private network changed. Choose a network in Settings.");}
-        }catch(Exception){Send("enable","value",false);Fail("Check your Private network in Settings.");}}
+            if(view.Network.SelectedItem==null||!NetworkPolicy.PrivateAddresses().ContainsValue(addresses[view.Network.SelectedItem.ToString()])){InvalidateFocus();Send("enable","value",false);Fail("Your Private network changed. Choose a network in Settings.");}
+        }catch(Exception){InvalidateFocus();Send("enable","value",false);Fail("Check your Private network in Settings.");}}
         if(pairCode.Length!=0&&DateTime.UtcNow>=pairingUntil){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";Fail("Code expired. Pair the device again.");}
         if(requestId!=null&&DateTime.UtcNow>=approvalUntil){Approve(false);Fail("Approval expired. Pair the device again.");}
         if(pairCode.Length!=0)Render();
@@ -68,7 +77,7 @@ internal sealed class HostWindow : Form {
         if(action=="back"||action=="done"){error="";pairedDone=false;Render();return;}
         if(action=="cancel"){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";Render();return;}
         if(action=="allow"){Approve(true);return;}if(action=="deny"){Approve(false);return;}
-        if(action=="stopFocus"){ClearFocusQr();Send("stopFocus");Render();return;}
+        if(action=="stopFocus"){StopFocus();return;}
         if(action=="quit"){await Quit();return;}
         if(pending.Length!=0)return;error="";
         if(action=="setup"){await ConfigureFirewall();return;}
@@ -77,7 +86,7 @@ internal sealed class HostWindow : Form {
             if(!networkReady){Fail("Choose a Private network in Settings.");return;}
             if(!fixture&&!development&&!FirewallPolicy.Configured()){Fail(FirewallPolicy.BlockReason()??"Set up network access in Settings.");return;}
             pending="enable";Send("enable","value",true);
-        }else if(action=="disable"){CancelSensitive();Send("enable","value",false);}
+        }else if(action=="disable"){CancelSensitive();InvalidateFocus();Send("enable","value",false);}
         else if(action=="pair"&&enabled&&!focusActive){pairedDone=false;pairingExpected=true;pending="pair";Send("pair");}
         Render();
     }
@@ -122,7 +131,7 @@ internal sealed class HostWindow : Form {
             worker=new Process{StartInfo=start,EnableRaisingEvents=true};
             worker.OutputDataReceived+=(s,e)=>{if(e.Data==null)return;if(e.Data.Length>32768){Send("shutdown");return;}try{var value=json.Deserialize<Dictionary<string,object>>(e.Data);BeginInvoke(new Action(()=>Receive(value)));}catch(Exception){}};
             worker.ErrorDataReceived+=(s,e)=>{};
-            worker.Exited+=(s,e)=>{if(!quitting&&IsHandleCreated)BeginInvoke(new Action(()=>{enabled=false;configured=false;ClearPairing();ClearFocusQr();Fail("Quit and reopen Spatial PC.");}));};
+            worker.Exited+=(s,e)=>{if(!quitting&&IsHandleCreated)BeginInvoke(new Action(()=>{enabled=false;configured=false;ClearPairing();InvalidateFocus();Fail("Quit and reopen Spatial PC.");}));};
             worker.Start();worker.BeginOutputReadLine();worker.BeginErrorReadLine();
             var sender=new Thread(()=>{try{foreach(string item in outgoing.GetConsumingEnumerable()){worker.StandardInput.WriteLine(item);worker.StandardInput.Flush();}worker.StandardInput.Close();}catch(Exception){try{worker.StandardInput.Close();}catch(Exception){}}});sender.IsBackground=true;sender.Start();
         }catch(Exception){Fail("Repair or reinstall Spatial PC.");}
@@ -136,12 +145,15 @@ internal sealed class HostWindow : Form {
     }
     void Approve(bool accepted){string id=requestId;if(id==null)return;requestId=null;requestName="";bool valid=DateTime.UtcNow<approvalUntil;pending=accepted&&valid?"approve":"cancel";if(!accepted||!valid)pairingExpected=false;SendObject(new Dictionary<string,object>{{"command","approve"},{"requestId",id},{"accepted",accepted&&valid}});Render();}
     void ClearPairing(){pairCode="";requestId=null;requestName="";attemptNote="";if(pending=="pair"||pending=="approve")pending="";}
-    void ClearFocusQr(){view.Qr.Image=null;var bitmap=focusBitmap;focusBitmap=null;focusGeneration=null;if(bitmap!=null)bitmap.Dispose();}
+    void ClearFocusQr(){view.Qr.Image=null;var bitmap=focusBitmap;focusBitmap=null;if(bitmap!=null)bitmap.Dispose();}
     void PresentFocusQr(Dictionary<string,object> value){
         bool presented=false;
-        try{ClearFocusQr();string payload=json.Serialize(new Dictionary<string,object>{{"token",value["token"]},{"digest",value["digest"]}});focusBitmap=FocusQr.Render(payload);payload=null;focusGeneration=Convert.ToString(value["generation"]);
+        try{
+            string incoming=Convert.ToString(value["generation"]);
+            if(!focusQrAllowed||focusStopping||incoming==retiredFocusGeneration||focusGeneration!=null){if(!focusQrAllowed||focusStopping)retiredFocusGeneration=incoming;return;}
+            ClearFocusQr();string payload=json.Serialize(new Dictionary<string,object>{{"token",value["token"]},{"digest",value["digest"]}});focusBitmap=FocusQr.Render(payload);payload=null;focusGeneration=incoming;
             ClearPairing();view.ShowSettings(false);Render();Reveal();view.Refresh();presented=Visible&&view.Qr.Visible&&view.Qr.Image!=null;
-        }catch(Exception){ClearFocusQr();Fail("QR code unavailable. Try Focus again.");}
+        }catch(Exception){InvalidateFocus();Fail("QR code unavailable. Try Focus again.");}
         finally{value.Remove("token");value.Remove("digest");SendObject(new Dictionary<string,object>{{"command","focusBarcodeReceipt"},{"requestId",value["requestId"]},{"accepted",presented}});}
     }
     void Receive(Dictionary<string,object> value){
@@ -152,7 +164,7 @@ internal sealed class HostWindow : Form {
                 string mode=value.ContainsKey("mediaMode")?Convert.ToString(value["mediaMode"]):"idle";focusActive=mode=="focus";
                 view.Encoder.Enabled=mode=="idle"&&value.ContainsKey("nvencConfigured")&&Convert.ToBoolean(value["nvencConfigured"]);
                 if(view.Encoder.Items.Count>0)view.Encoder.SelectedIndex=value.ContainsKey("desktopEncoder")&&Convert.ToString(value["desktopEncoder"])=="nvenc"?1:0;
-                if(value.ContainsKey("focus")){var caps=(Dictionary<string,object>)value["focus"];string phase=Convert.ToString(caps["state"]);view.StartFocus.Enabled=Convert.ToBoolean(caps["available"])&&view.Network.SelectedItem!=null;view.StopFocus.Enabled=phase=="starting"||phase=="ready";view.FocusStatus.Text="XR Focus: "+phase;}
+                if(value.ContainsKey("focus")){var caps=(Dictionary<string,object>)value["focus"];string phase=Convert.ToString(caps["state"]);if(mode=="idle"&&phase=="idle"&&focusStopping)focusStopping=false;view.StartFocus.Enabled=Convert.ToBoolean(caps["available"])&&view.Network.SelectedItem!=null&&!focusStopping&&!focusQrAllowed;view.StopFocus.Enabled=phase=="starting"||phase=="ready";view.FocusStatus.Text="XR Focus: "+phase;}
                 if(!configured&&value.ContainsKey("preferredAddress")){string preferred=Convert.ToString(value["preferredAddress"]);foreach(var entry in addresses)if(entry.Value==preferred){view.Network.SelectedItem=entry.Key;break;}}
                 enabled=Convert.ToBoolean(value["enabled"]);configured=true;networkReady=value.ContainsKey("needsNetwork")&&!Convert.ToBoolean(value["needsNetwork"]);
                 connected=value.ContainsKey("connected")?Convert.ToString(value["connected"]):"";if(connected.Length>0)pairedDone=false;if(pending=="enable"&&enabled)pending="";
@@ -172,14 +184,14 @@ internal sealed class HostWindow : Form {
         else if(kind=="pairingClosed"){pairingExpected=false;ClearPairing();if(pending=="cancel")pending="";}
         else if(kind=="pairingAttemptFailed"){if(pending=="cancel")return;if(pairCode.Length!=0)attemptNote="Check the code · "+Convert.ToInt32(value["attemptsRemaining"])+" attempts left";else{ClearPairing();Fail("Pairing didn’t finish. Try again.");}}
         else if(kind=="focusBarcode"){if(development||xrDevelopment)PresentFocusQr(value);else{value.Remove("token");value.Remove("digest");SendObject(new Dictionary<string,object>{{"command","focusBarcodeReceipt"},{"requestId",value["requestId"]},{"accepted",false}});}}
-        else if(kind=="focusBarcodeClosed"){if(focusGeneration==Convert.ToString(value["generation"]))ClearFocusQr();}
-        else if(kind=="focusEnded"){if(focusBitmap==null||focusGeneration==Convert.ToString(value["generation"])){ClearFocusQr();error="Focus ended. Your device is still paired.";}}
-        else if(kind=="error"){pairingExpected=false;ClearPairing();if(focusBitmap!=null){ClearFocusQr();Send("stopFocus");}Fail(Convert.ToString(value["message"]));}
+        else if(kind=="focusBarcodeClosed"){string generation=Convert.ToString(value["generation"]);if(focusGeneration==generation)ClearFocusQr();else if(!focusQrAllowed)retiredFocusGeneration=generation;}
+        else if(kind=="focusEnded"){if(focusGeneration==Convert.ToString(value["generation"])){InvalidateFocus();error="Focus ended. Your device is still paired.";}}
+        else if(kind=="error"){pairingExpected=false;ClearPairing();if(focusBitmap!=null||focusQrAllowed)StopFocus();Fail(Convert.ToString(value["message"]));}
         Render();
     }
     string StartupCommand{get{return "\""+Application.ExecutablePath+"\" --background";}}
     void SetStartup(){if(fixture)return;try{using(var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")){if(view.Startup.Checked)key.SetValue("SpatialPC",StartupCommand);else if(String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase))key.DeleteValue("SpatialPC",false);}}catch(Exception){Fail("Couldn’t update the sign-in preference.");}}
-    public async Task Quit(){if(quitting)return;quitting=true;ClearFocusQr();timer.Stop();Send("shutdown");outgoing.CompleteAdding();try{if(worker!=null){bool done=await Task.Run(()=>worker.WaitForExit(12000));if(!done)worker.Kill();}}catch(Exception){}tray.Visible=false;tray.Dispose();Close();}
+    public async Task Quit(){if(quitting)return;quitting=true;InvalidateFocus();timer.Stop();Send("shutdown");outgoing.CompleteAdding();try{if(worker!=null){bool done=await Task.Run(()=>worker.WaitForExit(12000));if(!done)worker.Kill();}}catch(Exception){}tray.Visible=false;tray.Dispose();Close();}
 #if UI_FIXTURE
     internal readonly List<Dictionary<string,object>> FixtureCommands=new List<Dictionary<string,object>>();
     internal static HostWindow CreateFixture(){var w=new HostWindow(false,false,false,true);w.firewallReady=true;w.addresses["Ethernet · 192.0.2.10"]="192.0.2.10";w.view.Network.Items.Add("Ethernet · 192.0.2.10");w.view.Network.SelectedIndex=0;return w;}
@@ -190,6 +202,8 @@ internal sealed class HostWindow : Form {
     internal void FixtureHide(){CancelSensitive();}
     internal void FixtureNetworkSetup(){firewallReady=false;Render();}
     internal void FixtureQr(Dictionary<string,object> value){PresentFocusQr(value);}
+    internal void FixtureBeginFocus(){BeginFocus();}
+    internal void FixtureRevoke(Func<string,string,bool> confirm){ConfirmRevoke(confirm);}
     internal void FixtureDispose(){ClearFocusQr();timer.Dispose();tray.Dispose();Dispose();}
 #endif
 }

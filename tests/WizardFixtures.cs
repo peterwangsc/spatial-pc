@@ -49,7 +49,7 @@ internal static class WizardFixtures {
             w=Ready();w.FixtureReceive(Status(true,1));Snapshot(w,"07-ready");
             w=Ready();w.FixtureReceive(Status(true,1,"Example Vision Pro"));Snapshot(w,"08-connected");
             w=Ready();w.FixtureReceive(Status(true,1));w.FixtureView.ShowSettings(true);Snapshot(w,"09-settings");
-            w=Ready();w.FixtureQr(D("event","focusBarcode","generation","public-generation","requestId","public-request","token","PUBLIC-FIXTURE-NOT-A-CREDENTIAL","digest",new string('0',64)));Check(w.FixtureView.Qr.Image!=null,"public QR rendered");Snapshot(w,"10-apple-qr");
+            w=Ready();w.FixtureBeginFocus();w.FixtureQr(D("event","focusBarcode","generation","public-generation","requestId","public-request","token","PUBLIC-FIXTURE-NOT-A-CREDENTIAL","digest",new string('0',64)));Check(w.FixtureView.Qr.Image!=null,"public QR rendered");Snapshot(w,"10-apple-qr");
             w=Ready();BeginCode(w);w.FixtureAct("cancel").GetAwaiter().GetResult();w.FixtureReceive(Approval());Check(w.FixtureView.Title.Text!="Allow this device?","late approval ignored after cancel");w.FixtureReceive(D("event","pairingClosed"));Check(w.FixtureView.Code.Text=="","cancel clears digits");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());w.FixtureAct("deny").GetAwaiter().GetResult();w.FixtureReceive(D("event","pairingAttemptFailed","attemptsRemaining",2));Check(w.FixtureView.Title.Text=="Canceling…","denial is not an error");w.FixtureReceive(D("event","pairingClosed"));Check(w.FixtureView.Title.Text=="Pair your Vision Pro","denial returns to pair");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureExpiry();int requests=w.FixtureCommands.Count;w.FixtureAct("back").GetAwaiter().GetResult();w.FixtureAct("pair").GetAwaiter().GetResult();Check(w.FixtureCommands.Count==requests,"expiry cannot reopen before close acknowledgement");w.FixtureReceive(D("event","pairingClosed"));w.FixtureAct("pair").GetAwaiter().GetResult();Check(w.FixtureCommands.Count==requests+1,"new pair allowed after close acknowledgement");w.FixtureDispose();
@@ -57,10 +57,23 @@ internal static class WizardFixtures {
             w=Ready();Check(w.FixtureView.Encoder.Parent==null&&w.FixtureView.StartFocus.Parent==null,"runtime controls absent from consumer settings");w.FixtureDispose();
             w=Ready();BeginCode(w);w.FixtureReceive(Approval());w.FixtureExpiry();Check(w.FixtureCommands.Any(c=>(string)c["command"]=="approve"&&!(bool)c["accepted"]),"expired approval denied");Check(w.FixtureView.Primary.Text!="Allow this device","expired approval cannot allow");Snapshot(w,"11-expired");
             w=Ready();BeginCode(w);w.FixtureHide();Check(w.FixtureView.Code.Text=="","hiding window clears code");Check(w.FixtureCommands.Any(c=>(string)c["command"]=="cancelPairing"),"hiding cancels pairing");w.FixtureDispose();
-            w=Ready();w.FixtureQr(D("generation","new","requestId","public","token","PUBLIC-FIXTURE","digest",new string('0',64)));var qr=w.FixtureView.Qr.Image;
+            w=Ready();w.FixtureBeginFocus();w.FixtureQr(D("generation","new","requestId","public","token","PUBLIC-FIXTURE","digest",new string('0',64)));var qr=w.FixtureView.Qr.Image;
             w.FixtureReceive(D("event","focusBarcodeClosed","generation","old"));Check(Object.ReferenceEquals(qr,w.FixtureView.Qr.Image),"stale close preserves current QR");
             w.FixtureReceive(D("event","focusEnded","generation","old"));Check(Object.ReferenceEquals(qr,w.FixtureView.Qr.Image),"stale end preserves current QR");
             w.FixtureReceive(D("event","error","message","Public fixture failure"));Check(w.FixtureView.Qr.Image==null,"error clears QR");Check(w.FixtureCommands.Any(c=>(string)c["command"]=="stopFocus"),"QR error stops owned Focus");w.FixtureDispose();
+            foreach(string cancel in new[]{"stopFocus","disable","hide"}){
+                w=Ready();w.FixtureBeginFocus();w.FixtureQr(D("generation","canceled","requestId","public","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                if(cancel=="hide")w.FixtureHide();else w.FixtureAct(cancel).GetAwaiter().GetResult();
+                w.FixtureQr(D("generation","canceled","requestId","late","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+                Check(w.FixtureView.Qr.Image==null,"late QR rejected after "+cancel);Check(!(bool)w.FixtureCommands.Last()["accepted"],"late QR receipt rejected after "+cancel);
+                int starts=w.FixtureCommands.Count(c=>(string)c["command"]=="startFocus");w.FixtureBeginFocus();Check(w.FixtureCommands.Count(c=>(string)c["command"]=="startFocus")==starts,"new start waits for idle ack");
+                w.FixtureReceive(Status(true));w.FixtureBeginFocus();w.FixtureQr(D("generation","canceled","requestId","old","token","PUBLIC-FIXTURE","digest",new string('0',64)));Check(w.FixtureView.Qr.Image==null,"retired generation still rejected");
+                w.FixtureQr(D("generation","fresh","requestId","fresh","token","PUBLIC-FIXTURE","digest",new string('0',64)));Check(w.FixtureView.Qr.Image!=null,"new authorized generation admitted");w.FixtureDispose();
+            }
+            w=Ready();w.FixtureReceive(Status(true,1));var handle=w.FixtureView.Devices.Handle;w.FixtureView.Devices.Items[0].Selected=true;
+            w.FixtureRevoke((id,name)=>{Check(id==new string('a',32)&&name=="Example Vision Pro","revoke captured target");w.FixtureView.Devices.Items[0].Selected=false;var other=new ListViewItem("Other public device"){Tag=new string('c',32)};w.FixtureView.Devices.Items.Add(other);other.Selected=true;return true;});
+            Check((string)w.FixtureCommands.Last()["deviceId"]==new string('a',32),"revoke targets captured id after selection change");
+            int count=w.FixtureCommands.Count;w.FixtureView.Devices.Items[1].Selected=false;w.FixtureView.Devices.Items[0].Selected=true;w.FixtureRevoke((id,name)=>{w.FixtureView.Devices.Items.Clear();return true;});Check(w.FixtureCommands.Count==count,"disappeared device does not revoke another");w.FixtureDispose();
             File.WriteAllText(Path.Combine(output,"result.txt"),passed+" assertions PASS; public fixture only; no backend/network/input/screenshots.\n");Console.WriteLine(passed+" assertions PASS");return 0;
         }catch(Exception e){Console.Error.WriteLine(e.ToString());return 1;}
     }
