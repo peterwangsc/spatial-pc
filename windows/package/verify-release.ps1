@@ -14,7 +14,7 @@ function Assert-PublisherSignature([string]$Target) {
         throw ('Missing valid timestamped publisher signature: '+(Split-Path $Target -Leaf))
     }
 }
-foreach ($relative in @('SpatialPC.exe','native/capture.exe','native/input_bridge.exe')) {
+foreach ($relative in @('SpatialPC.exe','native/capture.exe','native/input_bridge.exe','native/spatial_pake.dll')) {
     Assert-PublisherSignature (Join-Path $bundle $relative)
 }
 Assert-PublisherSignature (Resolve-Path -LiteralPath $Installer).Path

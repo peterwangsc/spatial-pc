@@ -33,6 +33,8 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
             stream=AsyncServiceInfo('_spatialpc._tcp.local.',discovery.info.name)
             self.assertTrue(await stream.async_request(browser.zeroconf,2500))
             self.assertEqual(stream.port,47993);self.assertEqual(stream.properties[b'pairing'],b'0')
+            self.assertEqual(stream.properties[b'version'],b'1')
+            self.assertEqual(stream.properties[b'pairingVersion'],b'2')
             self.assertIn(ipaddress.ip_address(address).packed,stream.addresses_by_version(version))
             self.assertIsNone(discovery.pair_info)
             await discovery.pairing(True)
@@ -41,6 +43,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(pair.port,47992);self.assertEqual(pair.server,stream.server)
             self.assertIn(ipaddress.ip_address(address).packed,pair.addresses_by_version(version))
             self.assertEqual(pair.properties[b'hostId'],host.encode())
+            self.assertEqual(pair.properties[b'pairingVersion'],b'2')
             await discovery.pairing(False)
             self.assertIsNone(discovery.pair_info)
             # Observe the real goodbye, then query with a fresh cache object.

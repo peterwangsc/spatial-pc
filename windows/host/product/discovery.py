@@ -35,7 +35,7 @@ class Discovery:
         host_id=self.identity.state['hostId']
         self.info=ServiceInfo('_spatialpc._tcp.local.','Spatial PC '+host_id[:8]+'._spatialpc._tcp.local.',
             addresses=self.packed,port=self.stream_port,interface_index=self.interface_index,
-            properties={'version':'1','hostId':host_id,'pairPort':str(self.pair_port),'pairing':'0'},
+            properties={'version':'1','pairingVersion':'2','hostId':host_id,'pairPort':str(self.pair_port),'pairing':'0'},
             server=self.identity.state['serverName']+'.')
         broadcast=await self.zeroconf.async_register_service(self.info)
         await broadcast
@@ -46,7 +46,7 @@ class Discovery:
             self.pair_info=ServiceInfo('_spatialpc-pair._tcp.local.',
                 self.info.name.replace('._spatialpc._tcp.local.','._spatialpc-pair._tcp.local.'),
                 addresses=self.packed,port=self.pair_port,interface_index=self.interface_index,
-                properties={'version':'1','hostId':self.identity.state['hostId']},server=self.info.server)
+                properties={'version':'1','pairingVersion':'2','hostId':self.identity.state['hostId']},server=self.info.server)
             try:
                 broadcast=await self.zeroconf.async_register_service(self.pair_info)
                 await broadcast
@@ -56,7 +56,7 @@ class Discovery:
             broadcast=await self.zeroconf.async_unregister_service(info)
             await broadcast
         self.info=ServiceInfo(self.info.type,self.info.name,addresses=self.packed,port=self.info.port,interface_index=self.interface_index,
-            properties={'version':'1','hostId':self.identity.state['hostId'],'pairPort':str(self.pair_port),'pairing':'1' if enabled else '0'},server=self.info.server)
+            properties={'version':'1','pairingVersion':'2','hostId':self.identity.state['hostId'],'pairPort':str(self.pair_port),'pairing':'1' if enabled else '0'},server=self.info.server)
         broadcast=await self.zeroconf.async_update_service(self.info)
         await broadcast
 

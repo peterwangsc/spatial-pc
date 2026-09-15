@@ -11,6 +11,7 @@ import threading
 import time
 from .identity import Identity
 from .pairing_server import PairingServer
+from .pairing_wire import OpeningBudget, PairingRateLimited
 from .stream_server import StreamServer
 from .discovery import Discovery
 from .network import local_addresses,normalize
@@ -22,6 +23,7 @@ class Worker:
         self.stream_port=47993 if development else 47991;self.pair_port=47992 if development else 47990
         self.discovery_enabled=discovery;self.discovery=None;self.stream=None;self.stream_task=None
         self.pair=None;self.pair_task=None;self.address=None;self.enabled=False;self.connected=''
+        self.opening_budget=OpeningBudget()
         self.message='Select a Private network and enable access when you are ready.'
 
     def status(self):
@@ -114,6 +116,7 @@ class Worker:
         elif command=='pair':
             if not self.enabled:raise ValueError('Enable access before pairing.')
             if len(self.identity.state['devices'])>=10:raise ValueError('Revoke a device before pairing another.')
+            self.opening_budget.reserve()
             await self.stop_pairing()
             self.pair=PairingServer(self.identity,self.address,self.pair_port,self.stream_port,self.event)
             self.pair_task=asyncio.create_task(self.pair.run())
@@ -121,7 +124,7 @@ class Worker:
                 await self.start_task(self.pair_task,self.pair.ready)
                 if self.discovery:await self.discovery.pairing(True)
                 code=self.pair.window.code()
-                self.notify(dict(event='pairingCode',code='-'.join(code[i:i+4] for i in range(0,len(code),4)),
+                self.notify(dict(event='pairingCode',code=code,
                     expiresSeconds=max(0,int(self.pair.window.expires-time.monotonic()))))
             except BaseException:
                 await self.stop_pairing();raise
@@ -190,6 +193,8 @@ async def run(development):
             try:
                 await worker.command(value)
                 if value.get('command')=='shutdown':break
+            except PairingRateLimited:
+                notify(dict(event='error',message='Pairing opened too often. Wait up to ten minutes before opening another code.'))
             except (ValueError,OSError,TimeoutError):
                 notify(dict(event='error',message='The operation could not finish. Check your Private network and installation, then try again.'))
     except Exception:

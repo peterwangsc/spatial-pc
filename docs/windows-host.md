@@ -40,11 +40,20 @@ Python3.14.7 Proactor runtime. The adapter uses zeroconf0.151.3 engine transport
 handles and must be rechecked when that dependency changes; tests assert every
 owned discovery socket is closed, rather than relying on an arbitrary delay.
 
-Choose **Enable access**, then **Pair a new device**. Enter the displayed one-time
+Choose **Enable access**, then **Pair a new device**. Enter the displayed four-digit
 code on Vision Pro and approve the named request on this PC. The code expires
-after three minutes and at most five failed attempts; local approval cannot
+after three minutes and at most three admitted exchanges; local approval cannot
 extend that window. Client private keys remain on Vision Pro. Repeat connections
-use mutual TLS and exact certificate pins. See [pairing-v1.md](pairing-v1.md).
+use mutual TLS and exact certificate pins. New enrollment uses SPP2 and the pinned
+BoringSSL SPAKE2 core. Existing saved devices retain their credentials; pairing
+never downgrades a four-digit PIN to the old SPP1 proof. See
+[Windows SPP2 validation](windows-pairing-v2-validation.md).
+
+The host allows five manually opened pairing windows per ten minutes. Disable,
+enable and network changes do not reset that counter; a local process restart
+does. No remote action can reopen a window. The client independently limits
+attempts against a malicious server and requires manual retries. Windows still
+requires explicit approval after a valid certificate-bound PAKE exchange.
 
 Access always starts disabled. The selected network and paired identities persist
 under the current Windows user's DPAPI protection. Closing the window leaves the
@@ -87,7 +96,8 @@ it on Windows is the supported way to end that device's access.
 `windows/package/build-bundle.ps1` builds the Windows UI and native binaries and
 assembles official Python3.14.7 with hash-pinned wheels. Supply the official x64
 embedded runtime archive, pinned wheelhouse, a build-only Python with pip, and the
-matching zeroconf source archive. The script validates archive hashes, uses only
+matching zeroconf source archive, and a clean BoringSSL checkout at the commit in
+`shared/pairing/boringssl.lock.json` via `-BoringSSLSource`. The script validates archive hashes, uses only
 local hashed wheels and writes a file/hash manifest. The LGPL component remains
 replaceable, with corresponding source and notices included.
 
@@ -95,6 +105,11 @@ replaceable, with corresponding source and notices included.
 files before compiling Inno Setup6.7.3. The current output is explicitly named
 `unsigned-test`. Never publish it as ready. The bundle excludes lab provisioning,
 test fixtures, certificates, private keys, captured media and developer runtimes.
+The private PAKE DLL statically links the supported crypto target with assembly
+disabled and exports only the shared wrapper ABI. Building uses Visual Studio
+2022, CMake and Ninja; it does not install a separate crypto runtime. All six
+upstream SPAKE2 tests run before packaging. The DLL and its license/source lock
+are included in the manifest and publisher-signature release gate.
 
 Release requires a clean reviewed source commit, valid Authenticode signatures
 from the verified publisher for Spatial PC executables and installer, trusted

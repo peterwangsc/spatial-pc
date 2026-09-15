@@ -80,8 +80,8 @@ internal sealed class HostWindow : Form {
         cancelPair.Text="Cancel pairing";cancelPair.AutoSize=true;cancelPair.Enabled=false;cancelPair.Click+=(s,e)=>Send("cancelPairing");
         pairRow.Controls.Add(pair);pairRow.Controls.Add(cancelPair);layout.Controls.Add(pairRow);
         var codeRow=new TableLayoutPanel { AutoSize=true,Dock=DockStyle.Fill,ColumnCount=1 };
-        code.ReadOnly=true;code.Font=new Font("Consolas",17);code.Dock=DockStyle.Top;code.Visible=false;code.AccessibleName="One-time pairing code";
-        pairHelp.Text="On Vision Pro, choose this PC and enter the one-time code. Then approve here.";pairHelp.AutoSize=true;pairHelp.MaximumSize=new Size(700,0);pairHelp.Margin=new Padding(0,8,0,12);
+        code.ReadOnly=true;code.Font=new Font("Consolas",17);code.Dock=DockStyle.Top;code.Visible=false;code.AccessibleName="Four-digit pairing code";
+        pairHelp.Text="On Vision Pro, choose this PC and enter the four-digit code. Then approve here.";pairHelp.AutoSize=true;pairHelp.MaximumSize=new Size(700,0);pairHelp.Margin=new Padding(0,8,0,12);
         codeRow.Controls.Add(code);codeRow.Controls.Add(pairHelp);layout.Controls.Add(codeRow);
         approval.Height=84;approval.Dock=DockStyle.Fill;approval.BackColor=Color.FromArgb(225,236,250);approval.Visible=false;
         approvalText.SetBounds(10,7,660,28);approval.Controls.Add(approvalText);
@@ -159,7 +159,7 @@ internal sealed class HostWindow : Form {
         try{if(worker!=null&&!worker.HasExited&&!outgoing.TryAdd(json.Serialize(value)))details.Text="The host is busy. Quit Spatial PC if it does not recover.";}catch(InvalidOperationException){}
     }
     void Approve(bool value){if(requestId!=null)SendObject(new Dictionary<string,object>{{"command","approve"},{"requestId",requestId},{"accepted",value}});approval.Visible=false;requestId=null;}
-    void ClearPairing(){code.Text="";code.Visible=false;cancelPair.Enabled=false;approval.Visible=false;requestId=null;pair.Enabled=enabled;pairHelp.Text="Pair only with a device you trust to view and control this PC.";}
+    void ClearPairing(){code.Text="";code.Visible=false;cancelPair.Enabled=false;approval.Visible=false;requestId=null;pair.Enabled=enabled;pairHelp.Text="Use the latest Spatial PC on Vision Pro. Enter the four-digit code, then approve here.";}
     void Receive(Dictionary<string,object> value){
         if(quitting||!value.ContainsKey("event"))return;
         string kind=Convert.ToString(value["event"]);
@@ -178,6 +178,7 @@ internal sealed class HostWindow : Form {
         } else if(kind=="approval") {
             code.Text="";code.Visible=false;requestId=Convert.ToString(value["requestId"]);approvalText.Text="Allow "+Convert.ToString(value["name"])+" to view and control this PC?";approval.Visible=true;Reveal();
         } else if(kind=="pairingClosed")ClearPairing();
+        else if(kind=="pairingAttemptFailed")details.Text="Pairing did not finish. Check the code on Vision Pro. Attempts remaining: "+Convert.ToInt32(value["attemptsRemaining"]);
         else if(kind=="error")details.Text=Convert.ToString(value["message"]);
     }
     string StartupCommand { get { return "\""+Application.ExecutablePath+"\" --background"; } }
