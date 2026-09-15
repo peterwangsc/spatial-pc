@@ -46,7 +46,9 @@ final class XRFocusSession {
         model.destination = .focus
         model.transitionPending = true
         session.immersivePresentationBehaviors = .automatic(open, close)
-        gate.begin(connect: { [session] in try await session.connect(endpoint: endpoint) },
+        // First-time system pairing includes looking at the PC's QR code.
+        gate.begin(timeout: .seconds(180),
+                   connect: { [session] in try await session.connect(endpoint: endpoint) },
                    disconnect: { [session] in await session.disconnect() },
                    ended: { [weak self, weak model] in
             guard let self, let model else { return }
@@ -65,6 +67,10 @@ struct XRFocusSetup: View {
     @Environment(\.dismissImmersiveSpace) private var closeSpace
     var body: some View {
         Section("Focus validation") {
+            if let host = model.devices.selected {
+                Button("Use Selected PC") { model.xrFocus.address = host.address }
+                    .disabled(model.xrFocus.gate.busy)
+            }
             TextField("PC IP address", text: Binding(get: { model.xrFocus.address }, set: { model.xrFocus.address = $0 }))
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .disabled(model.xrFocus.gate.busy)

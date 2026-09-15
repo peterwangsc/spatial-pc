@@ -13,6 +13,7 @@ The Windows host must finish its matching runtime integration before live use.
 
 In the XR configuration, Settings contains a temporary Focus validation section
 with an explicit PC IP address and session-management port (default 55000).
+Use Selected PC copies only its address; system XR pairing remains separate.
 Connect in Focus allows testing without first launching desktop capture. Once
 configured, the desktop's existing expand button selects this XR path as well.
 This address entry is development tooling; the intended product selects the
@@ -26,7 +27,7 @@ session operations settle, when a desktop session was active before entry.
 An unexpected immersive dismissal also requests shutdown. Session-status
 observation belongs to the model rather than to a potentially closed window.
 
-The connection gate rejects overlapping attempts. A 30-second connection timeout
+The connection gate rejects overlapping attempts. A 180-second connection timeout
 requests cancellation and disconnect; it does not claim to forcibly cancel an OS
 operation. Reconnect stays blocked until outstanding system calls return. A late
 successful connect receives another disconnect before the gate becomes idle.
@@ -57,7 +58,9 @@ Use a coordinated hardware phase and preserve the current app/data for regressio
 September 15, 2026: Xcode 26.5 / visionOS 26.5 SDK.
 
 - XR device compilation and development signing passed. App and provisioning
-  profile both contain the Foveated Streaming entitlement. Build 21 is uninstalled.
+  profile both contain the Foveated Streaming entitlement. Build 21 was signed;
+  the hardware-preparation follow-up allows three minutes for first-time system
+  pairing and adds Use Selected PC to avoid typing the address again.
 - Ordinary Release device compilation passed.
 - Existing 38 tests plus five new fake-session cancellation/race/timeout tests
   passed. These do not invoke Foveated Streaming or prove its native cancellation.
