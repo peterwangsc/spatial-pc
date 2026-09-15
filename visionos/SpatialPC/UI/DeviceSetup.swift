@@ -28,7 +28,7 @@ struct DeviceSetup: View {
         case .choose: "Choose your PC"
         case .address: "Enter your PC’s address"
         case .code: "Pairing code"
-        case .pairing: "Pairing with your PC"
+        case .pairing: model.pairing.phase == .verifying ? "Confirming code" : "Connecting"
         case .approval: "Approve on your PC"
         case .complete: "PC added"
         }
@@ -158,12 +158,10 @@ struct DeviceSetup: View {
             }
         case .pairing:
             ProgressView().controlSize(.large)
-            Text(model.pairing.phase == .verifying ? "Checking the pairing code…" : "Connecting…")
-                .foregroundStyle(.secondary)
         case .approval:
             Text("Choose Allow this device in Spatial PC on Windows.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
-            ProgressView("Waiting for approval…")
+            ProgressView().accessibilityLabel("Waiting for PC approval")
         case .complete:
             Text(model.devices.selected?.name ?? hostName)
                 .font(.title2).multilineTextAlignment(.center).lineLimit(3)
