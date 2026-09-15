@@ -26,8 +26,7 @@ internal static class FocusBridge {
     public static int Main(){
         ContainedChild manager=null,scene=null;IntPtr rpc=IntPtr.Zero;
         // Private IPC output only; discard managed vendor/sample logging.
-        var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false)){AutoFlush=true};
-        Console.SetOut(TextWriter.Null);Console.SetError(TextWriter.Null);
+        var output=FocusOutput.PrivatePipe();
         int exit=1;
         try {
             // Parent assigns this waiting helper to its kill-on-close job before sending start.
