@@ -17,6 +17,21 @@ The compile-only copy came from FFmpeg's `nv-codec-headers` mirror, tag
 It carries NVIDIA's 2010–2024 copyright and permissive MIT-style license grant;
 the original notice is intact. The header is not vendored in this repository.
 
+Independent Mac review on September15 confirmed the same commit, 298,014-byte
+file, SHA256 and API major12/minor2. Mac also found no original SDK archive.
+The tagged repository README still names corresponding SDK12.0.16 despite the
+12.2 header; its version description is not provenance proof. The header's
+permission notice explicitly applies to this header only, not the full SDK,
+NVIDIA driver or CloudXR binaries.
+
+Substitute review decision: keep this exact FFmpeg-distributed header as an
+external compile-only dependency for the isolated candidate and fixtures. Its
+hash, compile-time ABI assertions and actual driver API/capability gates remain
+mandatory. Do not relabel it as an original SDK12.2.72 artifact or infer wire,
+hardware or performance validation from a matching version. No vendoring is
+included in this change; any later vendoring must preserve the complete notice
+and explicitly identify FFmpeg distribution and unverified original-SDK identity.
+
 **Provenance gate remains open:** compare this copy with the original NVIDIA
 12.2.72 SDK archive, record archive/header hashes, and retain its applicable
 license before treating it as an official-source-verified dependency. The
