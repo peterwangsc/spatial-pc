@@ -1,4 +1,4 @@
-﻿//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 // Copyright © 2026 Apple Inc.
 //
 // Licensed under the MIT license (the "License");
@@ -89,17 +89,17 @@ namespace FoveatedStreaming.WindowsSample
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern nv_rpc_result_t nv_rpc_client_set_client_id(
-            IntPtr client, 
-            string clientId, 
-            UIntPtr clientIdLength, 
-            StringBuilder tokenBuffer, 
-            UIntPtr tokenSize, 
+            IntPtr client,
+            string clientId,
+            UIntPtr clientIdLength,
+            StringBuilder tokenBuffer,
+            UIntPtr tokenSize,
             out UIntPtr tokenSizeOut);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern nv_rpc_result_t nv_rpc_client_start_cxr_service(
-            IntPtr client, 
-            string service_version, 
+            IntPtr client,
+            string service_version,
             UIntPtr service_version_length);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
@@ -113,9 +113,9 @@ namespace FoveatedStreaming.WindowsSample
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern nv_rpc_result_t nv_rpc_client_get_crypto_key_fingerprint(
-            IntPtr client, 
-            nv_crypto_algorithm_t algorithm, 
-            StringBuilder fingerprint_out, 
+            IntPtr client,
+            nv_crypto_algorithm_t algorithm,
+            StringBuilder fingerprint_out,
             UIntPtr fingerprint_size);
 
 
@@ -190,4 +190,3 @@ namespace FoveatedStreaming.WindowsSample
         }
     }
 }
-
