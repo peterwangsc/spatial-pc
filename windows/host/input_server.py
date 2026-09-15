@@ -82,7 +82,7 @@ async def log_metadata(reader,path):
         await bounded_metadata(reader,destination)
 
 
-async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline, *, report=print, ready=None, capture_owner=None, continuous=False):
+async def run_session(reader, writer, policy, capture_path, bridge_path, directory, deadline, *, report=print, ready=None, capture_owner=None, continuous=False, encoder='mf'):
     capture = bridge = None
     gate = None
     completed = []
@@ -91,6 +91,7 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
     stats = TransportStats()
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
+        if encoder not in ('mf','nvenc'):raise ValueError('Unsupported desktop encoder')
         session_timeout(deadline,continuous)
         if continuous and capture_owner is None:raise ValueError('Continuous capture requires process ownership')
         tls = writer.get_extra_info('ssl_object')
@@ -105,7 +106,8 @@ async def run_session(reader, writer, policy, capture_path, bridge_path, directo
         enabled = isinstance(offer, dict) and type(offer.get('version')) is int and offer['version'] == 1
         text_enabled = enabled and text_negotiated(offer)
         lifetime_args=['--until-owner-exits'] if continuous else []
-        capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', *lifetime_args, stdout=asyncio.subprocess.PIPE,
+        encoder_args=['--encoder','nvenc'] if encoder=='nvenc' else []
+        capture = await asyncio.create_subprocess_exec(str(capture_path), '--stream', *encoder_args, *lifetime_args, stdout=asyncio.subprocess.PIPE,
                                                       stdin=asyncio.subprocess.PIPE if continuous else None,
                                                       stderr=asyncio.subprocess.PIPE, creationflags=flags, limit=65536)
         capture_log=asyncio.create_task(log_metadata(capture.stderr,directory.parent/'encoder.log'),name='capture-diagnostics')

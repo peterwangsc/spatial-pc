@@ -31,7 +31,7 @@ internal static class Program {
                 return;
             }
             if(!created) { activate.Set(); return; }
-            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"));
+            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),args.Contains("--xr-development"));
             var registration=ThreadPool.RegisterWaitForSingleObject(activate,(s,t)=>{
                 if(window.IsHandleCreated&&!window.IsDisposed)window.BeginInvoke(new Action(window.Reveal));
             },null,Timeout.Infinite,false);
@@ -50,18 +50,20 @@ internal sealed class HostWindow : Form {
     readonly TextBox code=new TextBox(); readonly ComboBox network=new ComboBox();
     readonly ListView devices=new ListView(); readonly Panel approval=new Panel();
     readonly CheckBox startup=new CheckBox(); readonly NotifyIcon tray=new NotifyIcon();
+    readonly ComboBox encoder=new ComboBox(); readonly Button startFocus=new Button(),stopFocus=new Button();
+    readonly Label focusStatus=new Label(); bool receivingStatus=false,focusAvailable=false;
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
     Process worker; bool enabled=false,quitting=false,configured=false; string requestId=null;
-    DateTime pairingUntil=DateTime.MinValue,nextNetworkCheck=DateTime.MinValue; readonly bool background,development;
+    DateTime pairingUntil=DateTime.MinValue,nextNetworkCheck=DateTime.MinValue; readonly bool background,development,xrDevelopment;
     readonly Dictionary<string,string> addresses=new Dictionary<string,string>();
     readonly BlockingCollection<string> outgoing=new BlockingCollection<string>(16);
 
-    public HostWindow(bool background,bool development) {
-        this.background=background;this.development=development;
-        Text="Spatial PC";ClientSize=new Size(780,640);MinimumSize=new Size(720,640);
+    public HostWindow(bool background,bool development,bool xrDevelopment) {
+        this.background=background;this.development=development;this.xrDevelopment=xrDevelopment;
+        Text="Spatial PC";ClientSize=new Size(780,720);MinimumSize=new Size(720,720);
         Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;StartPosition=FormStartPosition.CenterScreen;
         BackColor=Color.FromArgb(247,249,252);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        var layout=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(24),ColumnCount=1,RowCount=9 };
+        var layout=new TableLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(24),ColumnCount=1,RowCount=10 };
         Controls.Add(layout);
         state.Text="Starting Spatial PC…";state.Font=new Font(Font.FontFamily,20,FontStyle.Bold);state.AutoSize=true;
         layout.Controls.Add(state);
@@ -98,7 +100,18 @@ internal sealed class HostWindow : Form {
         using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))startup.Checked=key!=null&&String.Equals(key.GetValue("SpatialPC") as string,StartupCommand,StringComparison.OrdinalIgnoreCase);
         startup.CheckedChanged+=(s,e)=>SetStartup();deviceRow.Controls.Add(revoke);deviceRow.Controls.Add(startup);layout.Controls.Add(deviceRow);
         var footer=new Label { AutoSize=true,MaximumSize=new Size(700,0),ForeColor=Color.DimGray,Text="Closing this window keeps Spatial PC in the notification area. Quit there to stop access. Keyboard navigation on Vision Pro requires Full Keyboard Access to be off." };
-        layout.Controls.Add(footer);
+        var mediaRow=new FlowLayoutPanel{AutoSize=true,Dock=DockStyle.Fill,WrapContents=true};
+        encoder.DropDownStyle=ComboBoxStyle.DropDownList;encoder.Width=220;encoder.AccessibleName="Desktop encoder";
+        encoder.Items.Add("Desktop: Media Foundation");encoder.Items.Add("Desktop: NVENC (preview)");encoder.SelectedIndex=0;
+        encoder.SelectedIndexChanged+=(s,e)=>{if(!receivingStatus)Send("desktopEncoder","value",encoder.SelectedIndex==1?"nvenc":"mf");};
+        mediaRow.Controls.Add(encoder);
+        startFocus.Text="Start XR Focus";startFocus.AutoSize=true;startFocus.Enabled=false;
+        startFocus.Click+=(s,e)=>{if(devices.SelectedItems.Count==1&&MessageBox.Show(this,"Start an XR development session for this paired device? XR media protection is unresolved. Desktop sharing will pause.","Spatial PC",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes)Send("startFocus","deviceId",devices.SelectedItems[0].Tag);};
+        stopFocus.Text="Stop XR Focus";stopFocus.AutoSize=true;stopFocus.Enabled=false;stopFocus.Click+=(s,e)=>Send("stopFocus");
+        focusStatus.AutoSize=true;focusStatus.Text="XR Focus is not configured.";
+        if(development||xrDevelopment){mediaRow.Controls.Add(startFocus);mediaRow.Controls.Add(stopFocus);mediaRow.Controls.Add(focusStatus);}
+        devices.SelectedIndexChanged+=(s,e)=>startFocus.Enabled=enabled&&focusAvailable&&devices.SelectedItems.Count==1;
+        layout.Controls.Add(mediaRow);layout.Controls.Add(footer);
         tray.Icon=Icon;tray.Text="Spatial PC — access disabled";tray.Visible=true;tray.DoubleClick+=(s,e)=>Reveal();
         var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>Send("enable","value",false));menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
         Shown+=(s,e)=>{
@@ -141,7 +154,7 @@ internal sealed class HostWindow : Form {
         try {
             string root=AppDomain.CurrentDomain.BaseDirectory;
             string python=Path.Combine(root,"runtime","python.exe");
-            var start=new ProcessStartInfo(python,"-I -B -m product.main"+(development?" --development":"")) {
+            var start=new ProcessStartInfo(python,"-I -B -m product.main"+(development?" --development":"")+(xrDevelopment?" --xr-development":"")) {
                 UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=root,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8 };
             worker=new Process { StartInfo=start,EnableRaisingEvents=true };
             worker.OutputDataReceived+=(s,e)=>{if(e.Data==null)return;if(e.Data.Length>32768){Send("shutdown");return;}try{var value=json.Deserialize<Dictionary<string,object>>(e.Data);BeginInvoke(new Action(()=>Receive(value)));}catch(Exception){}};
@@ -164,6 +177,19 @@ internal sealed class HostWindow : Form {
         if(quitting||!value.ContainsKey("event"))return;
         string kind=Convert.ToString(value["event"]);
         if(kind=="status") {
+            receivingStatus=true;
+            try{
+                string mode=value.ContainsKey("mediaMode")?Convert.ToString(value["mediaMode"]):"idle";
+                encoder.Enabled=mode=="idle"&&value.ContainsKey("nvencConfigured")&&Convert.ToBoolean(value["nvencConfigured"]);
+                encoder.SelectedIndex=value.ContainsKey("desktopEncoder")&&Convert.ToString(value["desktopEncoder"])=="nvenc"?1:0;
+                if(value.ContainsKey("focus")){
+                    var caps=(Dictionary<string,object>)value["focus"];
+                    focusAvailable=Convert.ToBoolean(caps["available"]);
+                    string phase=Convert.ToString(caps["state"]);
+                    focusStatus.Text=Convert.ToBoolean(caps["configured"])?"XR Focus: "+phase:"XR Focus requires reviewed development components.";
+                    stopFocus.Enabled=phase=="starting"||phase=="ready";
+                }
+            }finally{receivingStatus=false;}
             if(!configured&&value.ContainsKey("preferredAddress")){string preferred=Convert.ToString(value["preferredAddress"]);foreach(var entry in addresses)if(entry.Value==preferred){network.SelectedItem=entry.Key;break;}}
             enabled=Convert.ToBoolean(value["enabled"]);configured=true;access.Enabled=network.Items.Count>0;
             access.Text=enabled?"Disable access":"Enable access";network.Enabled=!enabled;firewall.Enabled=!enabled;pair.Enabled=enabled&&!code.Visible;
