@@ -20,11 +20,16 @@ struct PCDesktopWindow: View {
             .overlay {
                 if !model.stream.hasFrames {
                     VStack(spacing:16) {
-                        if model.stream.active { ProgressView(); Text("Reconnecting to your PC…") }
-                        else {
-                            Text(model.stream.userMessage ?? "Desktop disconnected")
-                            Button("Reconnect",systemImage:"arrow.clockwise") { model.stream.connect() }
+                        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                        if model.xrFocus.gate.busy {
+                            ProgressView()
+                            Button("Cancel Focus") { model.xrFocus.gate.stop() }
+                        } else {
+                            desktopRecovery
                         }
+                        #else
+                        desktopRecovery
+                        #endif
                     }.padding(28).background(.regularMaterial,in:RoundedRectangle(cornerRadius:24))
                 }
             }
@@ -43,6 +48,13 @@ struct PCDesktopWindow: View {
             .onDisappear {
                 // Closing the desktop must not leave an empty immersive environment.
                 model.stream.stopControl()
+                #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                if model.xrFocus.gate.busy {
+                    model.xrFocus.returnToDesktop = false
+                    model.cancelDesktopRestoration()
+                    model.xrFocus.gate.stop()
+                }
+                #endif
                 guard model.destination == .focus else { return }
                 Task { @MainActor in
                     if model.isImmersed { await closeSpace() }
@@ -57,6 +69,14 @@ struct PCDesktopWindow: View {
                     model.transitionPending = false
                 }
             }
+    }
+    @ViewBuilder private var desktopRecovery: some View {
+        if model.stream.active { ProgressView(); Text("Reconnecting to your PC…") }
+        else {
+            Text(model.stream.userMessage ?? "Desktop disconnected")
+            Button("Reconnect",systemImage:"arrow.clockwise") { model.connectDesktop() }
+                .disabled(!model.desktopConnectionAllowed)
+        }
     }
 }
 

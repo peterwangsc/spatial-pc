@@ -37,7 +37,7 @@ struct ControlCenter: View {
                 model.destination = .desktop
                 openWindow(id:"pc-desktop",value:"primary")
             } else if ProcessInfo.processInfo.arguments.contains("--lab-connect") {
-                model.stream.connect()
+                model.connectDesktop()
             }
             #endif
         }
@@ -90,8 +90,9 @@ struct ControlCenter: View {
                             .buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
                     } else {
                         Button(connecting ? "Cancel" : "Connect",systemImage:connecting ? "xmark" : "link") {
-                            if connecting { model.stream.disconnect() } else { model.stream.connect() }
+                            if connecting { model.stream.disconnect() } else { model.connectDesktop() }
                         }.buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
+                            .disabled(!model.desktopConnectionAllowed)
                     }
                 }.padding(20).background(.thinMaterial,in:RoundedRectangle(cornerRadius:24))
             } else {
@@ -109,6 +110,11 @@ struct ControlCenter: View {
     private var settings: some View {
         NavigationStack {
             Form {
+                #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                XRFocusSetup(model: model)
+                #elseif SPATIALPC_XR
+                Section("Focus validation") { Text("XR streaming requires Vision Pro hardware.") }
+                #endif
                 Section("Windows host") {
                     Link("peterwang.tech/spatial-pc",destination:URL(string:"https://peterwang.tech/spatial-pc")!)
                     HStack {
