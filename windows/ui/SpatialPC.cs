@@ -77,6 +77,7 @@ internal sealed class HostWindow : Form {
         network.DropDownStyle=ComboBoxStyle.DropDownList;network.Width=330;network.AccessibleName="Private network";
         network.SelectedIndexChanged+=(s,e)=>{ if(configured&&!enabled&&network.SelectedItem!=null)Send("network","address",addresses[network.SelectedItem.ToString()]); };
         firewall.Text="Set up network";firewall.AutoSize=true;firewall.Click+=async(s,e)=>await ConfigureFirewall();
+        firewall.Visible=!xrDevelopment; // Development Focus uses reviewed, separately scoped setup.
         accessRow.Controls.Add(access);accessRow.Controls.Add(network);accessRow.Controls.Add(firewall);layout.Controls.Add(accessRow);
         var pairRow=new FlowLayoutPanel { AutoSize=true,Dock=DockStyle.Fill,Margin=new Padding(0,16,0,0) };
         pair.Text="Pair a new device";pair.AutoSize=true;pair.Enabled=false;pair.Click+=(s,e)=>Send("pair");
@@ -116,7 +117,8 @@ internal sealed class HostWindow : Form {
         var menu=new ContextMenuStrip();menu.Items.Add("Open Spatial PC",null,(s,e)=>Reveal());menu.Items.Add("Disable access",null,(s,e)=>Send("enable","value",false));menu.Items.Add("Quit",null,async(s,e)=>await Quit());tray.ContextMenuStrip=menu;
         Shown+=(s,e)=>{
             LoadNetworks();
-            if(development||FirewallPolicy.Configured())StartWorker();
+            // XR development can prepare an idle backend without opening desktop ports.
+            if(development||xrDevelopment||FirewallPolicy.Configured())StartWorker();
             else{state.Text="Set up your connection";details.Text=FirewallPolicy.BlockReason()??"Choose Set up network to allow Spatial PC on your Private local network. Access will stay disabled.";}
             if(background)Hide();
         };
@@ -210,8 +212,9 @@ internal sealed class HostWindow : Form {
                 }
             }finally{receivingStatus=false;}
             if(!configured&&value.ContainsKey("preferredAddress")){string preferred=Convert.ToString(value["preferredAddress"]);foreach(var entry in addresses)if(entry.Value==preferred){network.SelectedItem=entry.Key;break;}}
-            enabled=Convert.ToBoolean(value["enabled"]);configured=true;access.Enabled=network.Items.Count>0;
-            startFocus.Enabled=enabled&&focusAvailable;
+            enabled=Convert.ToBoolean(value["enabled"]);configured=true;
+            access.Enabled=network.Items.Count>0&&(enabled||development||!xrDevelopment||FirewallPolicy.Configured());
+            startFocus.Enabled=focusAvailable&&network.SelectedItem!=null;
             access.Text=enabled?"Disable access":"Enable access";network.Enabled=!enabled;firewall.Enabled=!enabled;pair.Enabled=enabled&&!code.Visible;
             string connected=value.ContainsKey("connected")?Convert.ToString(value["connected"]):"";
             state.Text=enabled?(connected.Length>0?"Connected to "+connected:"Ready for your Vision Pro"):"Access disabled";

@@ -26,6 +26,7 @@ class Worker:
         self.stream_port=47993 if development else 47991;self.pair_port=47992 if development else 47990
         self.discovery_enabled=discovery;self.discovery=None;self.stream=None;self.stream_task=None
         self.pair=None;self.pair_task=None;self.address=None;self.enabled=False;self.connected=''
+        self.focus_previous_enabled=None
         self.opening_budget=OpeningBudget()
         self.message='Select a Private network and enable access when you are ready.'
         self.media=MediaOwner();self.encoder='mf';self.nvenc=capture.parent/'capture_nvenc.exe'
@@ -69,7 +70,7 @@ class Worker:
         if self.discovery:await self.discovery.pairing(False)
 
     async def stop(self):
-        self.enabled=False
+        self.enabled=False;self.focus_previous_enabled=None
         focus_error=None
         try:await self.focus.stop()
         except Exception as error:focus_error=error
@@ -121,7 +122,15 @@ class Worker:
 
     async def stop_focus(self):
         await self.focus.stop()
-        if self.enabled and self.stream is None and not self.media.failed:await self.start_desktop()
+        await self.restore_focus_access()
+
+    async def restore_focus_access(self):
+        previous=self.focus_previous_enabled;self.focus_previous_enabled=None
+        if previous is None:return
+        if previous and self.enabled and not self.media.failed:
+            if self.stream is None:await self.start_desktop()
+        else:
+            self.enabled=False;self.message='Access is disabled. No desktop is being shared.';self.status()
 
     async def command(self,value):
         if not isinstance(value,dict) or len(value)>3:raise ValueError('Invalid local command')
@@ -141,10 +150,15 @@ class Worker:
             if self.enabled:await self.start()
             else:self.status()
         elif command=='startFocus':
-            if not self.enabled:raise ValueError('Focus requires enabled access and local approval')
-            try:await self.focus.start(None,self.pause_desktop,{'_address':self.address,'_notify':self.notify})
+            if not self.address:raise ValueError('Select a Private network before Focus')
+            previous=self.enabled;prepared=False
+            async def prepare_focus():
+                nonlocal prepared
+                await self.pause_desktop()
+                self.focus_previous_enabled=previous;self.enabled=True;prepared=True
+            try:await self.focus.start(None,prepare_focus,{'_address':self.address,'_notify':self.notify})
             except BaseException:
-                if self.enabled and self.stream is None and not self.media.failed:await self.start_desktop()
+                if prepared:await self.restore_focus_access()
                 raise
             self.message='Focus development window: connect on port 55000. Separate system QR pairing; XR media is not encrypted.';self.status()
         elif command=='focusBarcodeReceipt':
@@ -198,7 +212,7 @@ class Worker:
     async def health(self):
         try:await self.focus.health()
         except OSError:
-            if self.enabled and self.stream is None and not self.media.failed:await self.start_desktop()
+            await self.restore_focus_access()
             self.notify(dict(event='error',message='Focus stopped. Your existing pairing is unchanged.'))
         if self.stream_task and self.stream_task.done():
             task=self.stream_task
