@@ -114,6 +114,16 @@ class Identity:
         state['devices'] = [item for item in state['devices'] if item['id'] != device_id]
         self.save(state)
 
+    def set_focus_allowed(self, device_id, value, allowed=None):
+        if type(value) is not bool:
+            raise ValueError('Invalid Focus grant')
+        state = copy.deepcopy(self.state)
+        device = next((item for item in state['devices'] if item['id'] == device_id), None)
+        if device is None or (allowed is not None and not allowed()):
+            raise ValueError('Focus approval expired')
+        device['allowFocusControl'] = value
+        self.save(state)
+
     def device_for(self, fingerprint):
         return next((item for item in self.state['devices'] if secrets.compare_digest(item['fingerprint'], fingerprint)), None)
 

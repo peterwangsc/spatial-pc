@@ -18,10 +18,11 @@ from .network import local_addresses,normalize
 from .media_owner import MediaOwner
 from .focus import FocusController,FocusDeployment
 from .focus_local import LocalFocus
+from .focus_control import FocusControl
 
 
 class Worker:
-    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True,focus_deployment=None,focus_factory=None,xr_development=False):
+    def __init__(self,identity,capture,bridge,notify,development=False,discovery=True,focus_deployment=None,focus_factory=None,xr_development=False,focus_control_development=False):
         self.identity=identity;self.capture=capture;self.bridge=bridge;self.notify=notify;self.development=development
         self.stream_port=47993 if development else 47991;self.pair_port=47992 if development else 47990
         self.discovery_enabled=discovery;self.discovery=None;self.stream=None;self.stream_task=None
@@ -32,6 +33,8 @@ class Worker:
         self.media=MediaOwner();self.encoder='mf';self.nvenc=capture.parent/'capture_nvenc.exe'
         self.focus=FocusController(self.media,focus_deployment or FocusDeployment(capture.parent.parent,development or xr_development),self.status,
                                    factory=focus_factory or LocalFocus)
+        if focus_control_development and not xr_development:raise ValueError('Focus control requires XR development mode')
+        self.control=FocusControl(self) if focus_control_development else None
 
     def status(self):
         self.notify(dict(event='status',enabled=self.enabled,connected=self.connected,message=self.message,
@@ -71,6 +74,7 @@ class Worker:
 
     async def stop(self):
         self.enabled=False;self.focus_previous_enabled=None
+        if self.control:await self.control.close()
         focus_error=None
         try:await self.focus.stop()
         except Exception as error:focus_error=error
@@ -94,6 +98,10 @@ class Worker:
         if not self.capture.is_file() or not self.bridge.is_file():raise ValueError('Repair the Spatial PC installation: a host component is missing.')
         await self.stop()
         await self.start_desktop()
+        if self.control:
+            try:await self.control.start()
+            except BaseException:
+                await self.stop();raise
 
     async def start_desktop(self):
         selected=self.nvenc if self.encoder=='nvenc' else self.capture
@@ -108,7 +116,14 @@ class Worker:
             self.message='Ready on '+self.address+'. Pair a device or reconnect from Vision Pro.'
             self.status()
         except BaseException:
-            await self.stop();raise
+            # Restoration runs inside control cleanup. Do not recursively await
+            # that socket/cleanup through stop()->control.close().
+            if self.control and self.control.owner:
+                self.enabled=False
+                await self.pause_desktop()
+                if self.discovery:await self.discovery.close();self.discovery=None
+            else:await self.stop()
+            raise
 
     async def pause_desktop(self):
         await self.stop_pairing()
@@ -121,13 +136,16 @@ class Worker:
         self.stream=None
 
     async def stop_focus(self):
+        if self.control and self.control.owner:
+            await self.control.owner.begin_cleanup()
+            return
         await self.focus.stop()
         await self.restore_focus_access()
 
     async def restore_focus_access(self):
         previous=self.focus_previous_enabled;self.focus_previous_enabled=None
         if previous is None:return
-        if previous and self.enabled and not self.media.failed:
+        if previous and self.enabled and not self.media.failed and self.address in local_addresses():
             if self.stream is None:await self.start_desktop()
         else:
             self.enabled=False;self.message='Access is disabled. No desktop is being shared.';self.status()
@@ -139,7 +157,8 @@ class Worker:
                   'pair':{'command'},'cancelPairing':{'command'},'approve':{'command','requestId','accepted'},
                   'revoke':{'command','deviceId'},'shutdown':{'command'},
                   'desktopEncoder':{'command','value'},'startFocus':{'command'},'stopFocus':{'command'},
-                  'focusBarcodeReceipt':{'command','requestId','accepted'}}
+                  'focusBarcodeReceipt':{'command','requestId','accepted'},
+                  'focusPermissionDecision':{'command','requestId','accepted'}}
         if command not in expected or set(value)!=expected[command]:raise ValueError('Invalid local command')
         if command=='status':self.status()
         elif command=='desktopEncoder':
@@ -150,6 +169,7 @@ class Worker:
             if self.enabled:await self.start()
             else:self.status()
         elif command=='startFocus':
+            if self.control and self.control.owner:raise ValueError('A remote Focus request owns this session')
             if not self.address:raise ValueError('Select a Private network before Focus')
             previous=self.enabled;prepared=False
             async def prepare_focus():
@@ -165,6 +185,9 @@ class Worker:
             if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid QR receipt')
             adapter=self.focus.adapter
             if adapter and hasattr(adapter,'barcode_receipt'):adapter.barcode_receipt(value['requestId'],value['accepted'])
+        elif command=='focusPermissionDecision':
+            if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid Focus permission')
+            if self.control:self.control.permission_decision(value['requestId'],value['accepted'])
         elif command=='stopFocus':await self.stop_focus()
         elif command=='enable':
             if type(value['value']) is not bool:raise ValueError('Invalid access preference')
@@ -202,6 +225,7 @@ class Worker:
         elif command=='revoke':
             if not isinstance(value['deviceId'],str) or len(value['deviceId'])!=32:raise ValueError('Invalid device')
             self.identity.revoke(value['deviceId'])
+            if self.control:self.control.revoke(value['deviceId'])
             # System XR pairing cannot be mapped to an SPP2 device. Revoke stops all Focus.
             if self.media.mode=='focus':await self.stop_focus()
             if self.stream and self.stream.connected_id==value['deviceId']:
@@ -210,7 +234,8 @@ class Worker:
         elif command=='shutdown':await self.stop()
 
     async def health(self):
-        try:await self.focus.health()
+        try:
+            if not self.control or self.control.owner is None:await self.focus.health()
         except OSError:
             await self.restore_focus_access()
             self.notify(dict(event='error',message='Focus stopped. Your existing pairing is unchanged.'))
@@ -227,7 +252,7 @@ class Worker:
             self.notify(dict(event='error',message='The network changed. Select a Private network and enable access again.'))
 
 
-async def run(development,xr_development=False):
+async def run(development,xr_development=False,focus_control_development=False):
     loop=asyncio.get_running_loop();commands=asyncio.Queue(maxsize=16);stop=asyncio.Event();output=queue.Queue(maxsize=32)
     def halt():loop.call_soon_threadsafe(stop.set)
     def notify(value):
@@ -258,7 +283,7 @@ async def run(development,xr_development=False):
     worker=None
     try:
         identity=Identity(root)
-        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development,xr_development=xr_development)
+        worker=Worker(identity,app/'native'/'capture.exe',app/'native'/'input_bridge.exe',notify,development,xr_development=xr_development,focus_control_development=focus_control_development)
         worker.status()
         while not stop.is_set():
             try:value=await asyncio.wait_for(commands.get(),.5)
@@ -280,5 +305,6 @@ async def run(development,xr_development=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--development',action='store_true')
     parser.add_argument('--xr-development',action='store_true')
+    parser.add_argument('--focus-control-development',action='store_true')
     args=parser.parse_args()
-    asyncio.run(run(args.development,args.xr_development))
+    asyncio.run(run(args.development,args.xr_development,args.focus_control_development))

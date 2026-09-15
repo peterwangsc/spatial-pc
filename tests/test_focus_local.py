@@ -63,6 +63,24 @@ class Wire(unittest.IsolatedAsyncioTestCase):
 
 
 class Sessions(unittest.IsolatedAsyncioTestCase):
+    async def test_control_peer_restriction_rejects_other_source_before_native(self):
+        self.focus.config['_control_peer']='192.0.2.23'
+        self.writer.get_extra_info=lambda key:('192.0.2.24',50000) if key=='peername' else None
+        self.focus._accept(asyncio.StreamReader(),self.writer)
+        self.assertTrue(self.writer.closed);self.assertIsNone(self.focus.task);self.assertIsNone(self.focus.native)
+
+    async def test_progress_is_metadata_only_and_media_timer_starts_at_waiting(self):
+        phases=[]
+        self.focus.config['_progress']=phases.append
+        await self.run_messages(REQUEST+BARCODE+WAITING+DISCONNECTED)
+        self.assertEqual(phases,['qrPresented','startingMedia','mediaReady'])
+        self.assertNotIn('PUBLIC-FIXTURE-TOKEN',str(phases))
+
+    async def test_expired_setup_never_calls_native_start(self):
+        self.focus.deadline=time.monotonic()-.01
+        await self.run_messages(REQUEST)
+        self.assertTrue(self.focus.native is None or self.focus.native.client is None)
+
     def setUp(self):
         self.events=[]
         def notify(value):

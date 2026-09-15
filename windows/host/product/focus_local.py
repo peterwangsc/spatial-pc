@@ -6,6 +6,7 @@ IPC. System ClientID and SessionID are untrusted labels, never desktop identitie
 """
 import asyncio
 import json
+import ipaddress
 import re
 import secrets
 import socket
@@ -70,19 +71,21 @@ class LocalFocus:
 
     async def start(self,_local_owner):
         address=self.config['_address']
-        self.deadline=time.monotonic()+180
+        self.deadline=min(time.monotonic()+180,self.config.get('_setup_deadline',float('inf')),
+                          self.config.get('_certificate_deadline',float('inf')))
         # Callback is synchronous: reserve before another accepted connection can run.
         self.server=await asyncio.start_server(self._accept,address,55000,limit=8192,
             backlog=1,start_serving=False)
         self.running=True
         try:
+            if '_authorize' in self.config:self.config['_authorize'](self.session_id)
             await self.server.start_serving()
             self.expiry=asyncio.create_task(self._expire())
         except BaseException:
             await self.stop();raise
 
     async def _expire(self):
-        await asyncio.sleep(180)
+        await asyncio.sleep(max(0,self.deadline-time.monotonic()))
         if self.session is None or self.receipt is not None:
             self.invalid=True
             self.cancel_handler()
@@ -90,6 +93,10 @@ class LocalFocus:
             if self.server:self.server.close()
 
     def _accept(self,reader,writer):
+        allowed_peer=self.config.get('_control_peer')
+        peer=writer.get_extra_info('peername')
+        if allowed_peer and (not peer or ipaddress.ip_address(peer[0].split('%')[0])!=ipaddress.ip_address(allowed_peer.split('%')[0])):
+            writer.close();return
         if self.invalid or not self.running or self.task is not None or time.monotonic()>=self.deadline:
             writer.close();return
         self.writer=writer
@@ -105,6 +112,14 @@ class LocalFocus:
             self.receipt.set_result(accepted)
 
     def notify(self,value):self.config['_notify'](dict(value,generation=self.session_id))
+
+    def progress(self,state):
+        if '_progress' in self.config:self.config['_progress'](state)
+
+    def remaining(self,limit):
+        remaining=min(limit,self.deadline-time.monotonic())
+        if remaining<=0:raise TimeoutError('Focus setup expired')
+        return remaining
 
     async def _read_pump(self,reader):
         try:
@@ -130,12 +145,13 @@ class LocalFocus:
             self.messages=asyncio.Queue(maxsize=8)
             self.pump=asyncio.create_task(self._read_pump(reader))
             self.native=self.factory(self.config,self.session_id)
-            await asyncio.wait_for(self.native.start(request['ClientID']),16)
+            prepare_timeout=self.remaining(16)
+            await asyncio.wait_for(self.native.start(request['ClientID']),prepare_timeout)
             if self.invalid:raise asyncio.CancelledError()
             # Force documented system QR, never reuse a claimed SPP2 identity.
             await send_message(writer,'AcknowledgeConnection',self.session,ServerID=self.session_id)
             paired=False;ready=False;presented=False
-            hard_deadline=time.monotonic()+600
+            hard_deadline=self.deadline
             while not self.invalid:
                 deadline=hard_deadline if paired else self.deadline
                 remaining=deadline-time.monotonic()
@@ -147,21 +163,26 @@ class LocalFocus:
                     pin,token=self.native.credentials
                     self.notify(dict(event='focusBarcode',requestId=self.receipt_id,token=token,digest=pin))
                     token=None
-                    if not await asyncio.wait_for(self.receipt,min(15,remaining)):raise ValueError('Focus barcode not presented')
+                    if not await asyncio.wait_for(self.receipt,self.remaining(15)):raise ValueError('Focus barcode not presented')
                     self.receipt=None;self.receipt_id=None
                     if self.invalid:raise asyncio.CancelledError()
                     presented=True
+                    self.progress('qrPresented')
                     await send_message(writer,'AcknowledgeBarcodePresentation',self.session)
                 elif event['Status']=='DISCONNECTED':break
                 elif event['Status']=='WAITING':
                     if not presented or ready:raise ValueError('Unexpected Focus WAITING')
                     paired=True # Protocol progression only, not an SPP2 authentication claim.
-                    self.read_timer.reschedule(hard_deadline)
                     self.notify(dict(event='focusBarcodeClosed'))
-                    await asyncio.wait_for(self.native.start_media(),16)
+                    start_timeout=self.remaining(16)
+                    self.progress('startingMedia')
+                    hard_deadline=min(time.monotonic()+600,self.config.get('_certificate_deadline',float('inf')))
+                    self.read_timer.reschedule(hard_deadline)
+                    await asyncio.wait_for(self.native.start_media(),min(start_timeout,max(.001,hard_deadline-time.monotonic())))
                     if self.invalid:raise asyncio.CancelledError()
                     ready=True
                     await send_message(writer,'MediaStreamIsReady',self.session)
+                    self.progress('mediaReady')
                 elif not ready:raise ValueError('Focus status before readiness')
         except asyncio.CancelledError:pass
         except (ValueError,OSError,TimeoutError,asyncio.IncompleteReadError):
