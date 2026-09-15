@@ -75,6 +75,29 @@ internal static class WizardFixtures {
             w.FixtureRevoke((id,name)=>{Check(id==new string('a',32)&&name=="Example Vision Pro","revoke captured target");w.FixtureView.Devices.Items[0].Selected=false;var other=new ListViewItem("Other public device"){Tag=new string('c',32)};w.FixtureView.Devices.Items.Add(other);other.Selected=true;return true;});
             Check((string)w.FixtureCommands.Last()["deviceId"]==new string('a',32),"revoke targets captured id after selection change");
             int count=w.FixtureCommands.Count;w.FixtureView.Devices.Items[1].Selected=false;w.FixtureView.Devices.Items[0].Selected=true;w.FixtureRevoke((id,name)=>{w.FixtureView.Devices.Items.Clear();return true;});Check(w.FixtureCommands.Count==count,"disappeared device does not revoke another");w.FixtureDispose();
+            w=HostWindow.CreateFixture(true);w.FixtureReceive(Status(true,1));
+            w.FixtureReceive(D("event","focusPermission","requestId","public-visual","name","Example Vision Pro","expiresSeconds",60));Snapshot(w,"12-focus-permission");
+            w=HostWindow.CreateFixture(true);w.FixtureReceive(Status(true,1));
+            w.FixtureReceive(D("event","focusPermission","requestId","public-permission","name","Example Vision Pro","expiresSeconds",60));
+            Check(w.FixtureView.Title.Text=="Allow Focus?","Focus permission is explicit");
+            w.FixtureAct("allowFocus").GetAwaiter().GetResult();w.FixtureAct("allowFocus").GetAwaiter().GetResult();
+            Check(w.FixtureCommands.Count(c=>(string)c["command"]=="focusPermissionDecision")==1,"Focus permission single decision");
+            Check((bool)w.FixtureCommands.Last()["accepted"],"Focus local approval true");w.FixtureDispose();
+            w=HostWindow.CreateFixture(true);w.FixtureReceive(Status(true,1));
+            w.FixtureReceive(D("event","focusPermission","requestId","public-canceled","name","Example Vision Pro","expiresSeconds",60));
+            w.FixtureReceive(D("event","focusPermissionClosed","requestId","public-canceled"));
+            int permissionCount=w.FixtureCommands.Count;w.FixtureAct("allowFocus").GetAwaiter().GetResult();
+            Check(w.FixtureCommands.Count==permissionCount,"canceled remote permission cannot grant");w.FixtureDispose();
+            w=HostWindow.CreateFixture(true);w.FixtureReceive(Status(true,1));
+            w.FixtureReceive(D("event","focusControlStarted","generation","public-remote"));
+            w.FixtureQr(D("generation","wrong-generation","requestId","public-wrong","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+            Check(w.FixtureView.Qr.Image==null,"remote QR requires exact authorized generation");
+            w.FixtureQr(D("generation","public-remote","requestId","public-right","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+            Check(w.FixtureView.Qr.Image!=null,"remote authorized QR rendered");
+            w.FixtureAct("stopFocus").GetAwaiter().GetResult();w.FixtureReceive(Status(true));
+            w.FixtureReceive(D("event","focusControlStarted","generation","public-remote"));
+            w.FixtureQr(D("generation","public-remote","requestId","public-late","token","PUBLIC-FIXTURE","digest",new string('0',64)));
+            Check(w.FixtureView.Qr.Image==null,"late remote start and QR cannot reopen canceled generation");w.FixtureDispose();
             File.WriteAllText(Path.Combine(output,"result.txt"),passed+" assertions PASS; public fixture only; no backend/network/input/screenshots.\n");Console.WriteLine(passed+" assertions PASS");return 0;
         }catch(Exception e){Console.Error.WriteLine(e.ToString());return 1;}
     }

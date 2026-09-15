@@ -12,6 +12,23 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 @unittest.skipUnless(os.name=='nt','Windows DPAPI integration')
 class IdentityTests(unittest.TestCase):
+    def test_focus_grant_is_explicit_atomic_and_preserves_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            identity=Identity(Path(root)/'state')
+            device=identity.enroll(ec.generate_private_key(ec.SECP256R1()).public_key(),'Public fixture')
+            before=identity.server.fingerprint(hashes.SHA256())
+            self.assertNotIn('allowFocusControl',device)
+            with self.assertRaises(ValueError):identity.set_focus_allowed(device['id'],True,allowed=lambda:False)
+            self.assertNotIn('allowFocusControl',identity.device_for(device['fingerprint']))
+            identity.set_focus_allowed(device['id'],True,allowed=lambda:True)
+            saved=Identity(identity.directory)
+            self.assertTrue(saved.device_for(device['fingerprint'])['allowFocusControl'])
+            self.assertEqual(before,saved.server.fingerprint(hashes.SHA256()))
+            saved.set_focus_allowed(device['id'],False)
+            self.assertFalse(Identity(identity.directory).device_for(device['fingerprint'])['allowFocusControl'])
+            saved.revoke(device['id'])
+            with self.assertRaises(ValueError):saved.set_focus_allowed(device['id'],True)
+
     def test_protected_identity_reload_revoke_and_no_plaintext_key_files(self):
         with tempfile.TemporaryDirectory() as root:
             identity=Identity(Path(root)/'state')

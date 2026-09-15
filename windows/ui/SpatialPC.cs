@@ -31,7 +31,7 @@ internal static class Program {
                 return;
             }
             if(!created) { activate.Set(); return; }
-            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),args.Contains("--xr-development"));
+            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),args.Contains("--xr-development"),args.Contains("--focus-control-development"));
             var registration=ThreadPool.RegisterWaitForSingleObject(activate,(s,t)=>{
                 if(window.IsHandleCreated&&!window.IsDisposed)window.BeginInvoke(new Action(window.Reveal));
             },null,Timeout.Infinite,false);
