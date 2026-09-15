@@ -11,7 +11,7 @@ struct DiscoveredHost:Identifiable,Hashable {
 
 @MainActor @Observable final class HostDiscovery {
     private(set) var hosts:[DiscoveredHost] = []
-    private(set) var status = "Open Pair Device in the Windows host."
+    private(set) var status = "Open Pair a new device in Spatial PC on Windows."
     @ObservationIgnored private var browser:NWBrowser?
     @ObservationIgnored private var searchStatus:Task<Void,Never>?
     @ObservationIgnored private var generation = UUID()
@@ -26,7 +26,7 @@ struct DiscoveredHost:Identifiable,Hashable {
             }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             Task { @MainActor in
                 guard let self,self.generation == session else { return }
-                self.hosts = hosts; self.status = hosts.isEmpty ? "No PCs ready to pair. Open Pair Device on your PC." : "Choose your PC."
+                self.hosts = hosts; self.status = hosts.isEmpty ? "No PCs ready to pair. Choose Pair a new device on your PC." : "Choose your PC."
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
@@ -43,7 +43,7 @@ struct DiscoveredHost:Identifiable,Hashable {
         searchStatus = Task { [weak self] in
             do { try await Task.sleep(for:.seconds(3)) } catch { return }
             guard let self,self.generation == session,self.hosts.isEmpty,self.status == "Searching…" else { return }
-            self.status = "No PCs ready to pair. Open Pair Device on your PC."
+            self.status = "No PCs ready to pair. Choose Pair a new device on your PC."
         }
     }
     func stop() { searchStatus?.cancel(); searchStatus = nil; generation = UUID(); browser?.cancel(); browser = nil; hosts = [] }

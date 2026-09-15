@@ -28,16 +28,20 @@ struct ControlCenter: View {
         }
         .frame(minWidth:700,minHeight:480)
         .sheet(isPresented:$settingsOpen) { settings }
-        .sheet(isPresented:$devicesOpen) { DeviceSetup(model:model) }
+        .sheet(isPresented:$devicesOpen) {
+            DeviceSetup(model:model) { devicesOpen = false; model.connectDesktop() }
+        }
         .task {
             guard !model.startupHandled else { return }
             model.startupHandled = true
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--desktop-preview") {
+            if ProcessInfo.processInfo.arguments.contains("--device-setup-preview") {
+                devicesOpen = true
+            } else if ProcessInfo.processInfo.arguments.contains("--desktop-preview") {
                 model.destination = .desktop
                 openWindow(id:"pc-desktop",value:"primary")
             } else if ProcessInfo.processInfo.arguments.contains("--lab-connect") {
-                model.stream.connect()
+                model.connectDesktop()
             }
             #endif
         }
@@ -90,8 +94,9 @@ struct ControlCenter: View {
                             .buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
                     } else {
                         Button(connecting ? "Cancel" : "Connect",systemImage:connecting ? "xmark" : "link") {
-                            if connecting { model.stream.disconnect() } else { model.stream.connect() }
+                            if connecting { model.stream.disconnect() } else { model.connectDesktop() }
                         }.buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
+                            .disabled(!model.desktopConnectionAllowed)
                     }
                 }.padding(20).background(.thinMaterial,in:RoundedRectangle(cornerRadius:24))
             } else {
@@ -109,6 +114,9 @@ struct ControlCenter: View {
     private var settings: some View {
         NavigationStack {
             Form {
+                #if canImport(FoveatedStreaming)
+                if ProcessInfo.processInfo.arguments.contains("--manual-focus") { XRFocusSetup(model: model) }
+                #endif
                 Section("Windows host") {
                     Link("peterwang.tech/spatial-pc",destination:URL(string:"https://peterwang.tech/spatial-pc")!)
                     HStack {

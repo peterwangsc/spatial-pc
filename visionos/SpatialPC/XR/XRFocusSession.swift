@@ -1,0 +1,337 @@
+#if canImport(FoveatedStreaming)
+import SwiftUI
+import FoveatedStreaming
+import Network
+import RealityKit
+
+@MainActor @Observable
+final class XRFocusSession {
+    let session = FoveatedStreamingSession()
+    let gate = XRConnectionGate()
+    // Development configuration only; no saved desktop pairing is reused or changed.
+    var address = ""
+    var port = "55000"
+    private(set) var validationError: String?
+    var configured: Bool { !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var returnToDesktop = false
+
+    private struct DiagnosticEvent: Encodable, Sendable {
+        let time: Double
+        let event: String
+        let phase: String
+        let stage: String
+        let code: Int?
+        let errorDomain: String?
+        let detail: XRDisconnectDetail?
+    }
+    @ObservationIgnored private var diagnosticEvents: [DiagnosticEvent] = []
+    @ObservationIgnored private let diagnosticQueue = DispatchQueue(label: "SpatialPC.immersive-diagnostics", qos: .utility)
+    @ObservationIgnored private var privateDiagnosticValues: [String] = []
+    @ObservationIgnored private var describedOrigins: Set<String> = []
+    private var firstDisconnectExplanation: String?
+
+    // Fixed stages plus a bounded, redacted public LocalizedError description.
+    // Never reflect SDK private state or retain error userInfo/QR/control payloads.
+    func record(_ event: String, code: Int? = nil, errorDomain: String? = nil, detail: XRDisconnectDetail? = nil) {
+        let domain = errorDomain.flatMap { value in
+            value.utf8.count <= 96 && value.range(of:"^[A-Za-z0-9_.-]+$",options:.regularExpression) != nil ? value : nil
+        }
+        diagnosticEvents.append(DiagnosticEvent(time:Date().timeIntervalSince1970,event:event,
+                                                phase:String(describing:gate.phase),stage:stage,code:code,errorDomain:domain,detail:detail))
+        if diagnosticEvents.count > 96 { diagnosticEvents.removeFirst(diagnosticEvents.count - 96) }
+        let snapshot = diagnosticEvents
+        let url = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
+            .appendingPathComponent("immersive-diagnostics.json")
+        diagnosticQueue.async {
+            if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to:url,options:.atomic) }
+        }
+    }
+
+    private func describe(_ reason: FoveatedStreamingSession.DisconnectReason, origin: String) {
+        guard gate.phase == .connecting || gate.phase == .connected,
+              reason != .appInitiatedDisconnect, describedOrigins.insert(origin).inserted else { return }
+        let detail = XRDisconnectDetail(reason.errorDescription, privateValues:privateDiagnosticValues)
+        record("apple.description." + origin, detail:detail)
+        if firstDisconnectExplanation == nil, let text = detail.text, !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            firstDisconnectExplanation = text
+        }
+    }
+
+    private static func reasonName(_ reason: FoveatedStreamingSession.DisconnectReason) -> String {
+        if reason == .appInitiatedDisconnect { return "appInitiated" }
+        if reason == .endpointInitiatedDisconnect { return "endpointInitiated" }
+        if reason == .unauthorized { return "unauthorized" }
+        if reason == .unavailable { return "unavailable" }
+        return "other"
+    }
+
+    init() { observeStatus() }
+
+    private func observeStatus() {
+        // The controls window may be closed; session cleanup must outlive views.
+        let status = withObservationTracking {
+            session.status
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeStatus() }
+        }
+        // Track only the framework status. Reading gate state inside the tracking
+        // closure would also observe begin() and could cancel a fresh connection.
+        switch status {
+        case .disconnected(let reason):
+            record("apple.disconnected." + Self.reasonName(reason))
+            describe(reason,origin:"status")
+            gate.sessionDisconnected()
+        case .initialized: record("apple.initialized")
+        case .connecting: record("apple.connecting")
+        case .connected: record("apple.connected")
+        case .disconnecting: record("apple.disconnecting")
+        case .paused: record("apple.paused")
+        case .pausing: record("apple.pausing")
+        case .resuming: record("apple.resuming")
+        @unknown default: record("apple.otherStatus")
+        }
+    }
+
+    @ObservationIgnored private var control: FocusControlClient?
+    private var stoppedCleanly = false
+    private(set) var stage = "Connecting"
+
+    func stop(returnToDesktop: Bool = false) {
+        self.returnToDesktop = returnToDesktop
+        record(returnToDesktop ? "stop.returnToDesktop" : "stop")
+        gate.stop()
+    }
+
+    /// The same saved PC opens its desktop first. Its control connection owns
+    /// the switch to Apple's separate system-paired XR session.
+    func enterPaired(model: AppModel, open: OpenImmersiveSpaceAction, close: DismissImmersiveSpaceAction) {
+        guard !gate.busy,!model.isImmersed,let host = model.devices.selected else { return }
+        stoppedCleanly = false; returnToDesktop = false
+        firstDisconnectExplanation = nil; describedOrigins = []
+        privateDiagnosticValues = [host.name,host.address,host.serverName,host.id,host.deviceID,host.keyTag,
+                                   host.serviceName ?? "",host.serviceDomain ?? ""]
+        validationError = nil; stage = "Connecting"
+        record("enterPaired")
+        model.transitionPending = true
+        model.cancelDesktopRestoration()
+        let client = FocusControlClient(); control = client
+        client.onFailure = { [weak self] in
+            guard let self,self.gate.busy else { return }
+            self.record("control.failed")
+            self.returnToDesktop = false
+            self.validationError = "Immersive Mode disconnected. Reconnect to your PC."
+            self.gate.stop()
+        }
+        client.onProgress = { [weak self] state in
+            guard let self else { return }
+            self.record("host." + state)
+            switch state {
+            case "awaitingPermission": self.stage = "Approve on your PC"
+            case "waitingForSystem", "qrPresented": self.stage = "Scan the code on your PC"
+            case "startingMedia", "mediaReady": self.stage = "Starting Immersive Mode"
+            case "stopped", "failed":
+                if self.gate.phase != .stopping { self.returnToDesktop = false; self.gate.stop() }
+            default: break
+            }
+        }
+        session.immersivePresentationBehaviors = .automatic(open,close)
+        gate.begin(timeout:.seconds(300),connect: { [weak self,weak model] in
+            guard let self,let model else { throw CancellationError() }
+            do {
+                try await client.connect(host:host)
+                self.record("control.connected")
+                let capabilities = try await client.request("capabilities")
+                guard capabilities["runtimeConfigured"] as? Bool == true else {
+                    throw FocusControlClient.Failure.rejected("runtimeUnavailable")
+                }
+                guard capabilities["accessEnabled"] as? Bool == true else {
+                    throw FocusControlClient.Failure.rejected("accessDisabled")
+                }
+                if capabilities["focusAllowed"] as? Bool != true {
+                    self.stage = "Approve on your PC"
+                    let permission = try await client.request("focus.requestPermission",timeout:65)
+                    guard permission["granted"] as? Bool == true else { throw FocusControlClient.Failure.rejected("permissionRequired") }
+                }
+                try Task.checkCancellation()
+                model.stream.stopControl(); model.stream.disconnect()
+                model.destination = .focus
+                self.stage = "Starting Immersive Mode"
+                let prepared = try await client.request("focus.prepare",parameters:["intent":"enter"],timeout:32)
+                self.record("host.prepared")
+                let hostAddress = try client.appleAddress(from:prepared)
+                self.privateDiagnosticValues.append(hostAddress)
+                try Task.checkCancellation()
+                let endpoint = try self.endpoint(address:hostAddress,port:55000)
+                self.stage = "Scan the code on your PC"
+                self.record("apple.connect.begin")
+                try await self.connectSystem(endpoint:endpoint)
+                self.record("apple.connect.returned")
+            } catch {
+                let category: String
+                if error is CancellationError { category = "cancelled" }
+                else if let reason = error as? FoveatedStreamingSession.DisconnectReason { category = "apple." + Self.reasonName(reason) }
+                else if error is FocusControlClient.Failure { category = "control" }
+                else { category = "other" }
+                let nsError = error as NSError
+                self.record("connect.error." + category, code:nsError.code,errorDomain:nsError.domain)
+                // Preserve only recognized categories and standard nested codes,
+                // never the framework's arbitrary localized text or userInfo.
+                if let reason = error as? FoveatedStreamingSession.DisconnectReason {
+                    self.describe(reason,origin:"connect")
+                    let text = (reason.errorDescription ?? "").prefix(512).lowercased()
+                    for word in ["certificate", "authentication", "permission", "network", "timeout", "refused",
+                                 "version", "codec", "configuration", "unsupported", "presentation", "immersive",
+                                 "space", "signaling", "protocol", "cancel", "server", "render"] where text.contains(word) {
+                        self.record("apple.descriptionContains." + word)
+                    }
+                }
+                var nested = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+                for depth in 1...3 {
+                    guard let current = nested else { break }
+                    self.record("connect.underlying" + String(depth),code:current.code,errorDomain:current.domain)
+                    nested = current.userInfo[NSUnderlyingErrorKey] as? NSError
+                }
+                if !Task.isCancelled { self.validationError = self.firstDisconnectExplanation ?? Self.message(for:error) }
+                throw error
+            }
+        },disconnect: { [weak self] in
+            guard let self else { return }
+            // This cleanup task survives cancellation of connect. The host must
+            // confirm its media owner is idle before automatic desktop return.
+            self.record("cleanup.begin")
+            if client.connected {
+                do {
+                    let result = try await client.request("focus.stop",parameters:["sessionId":NSNull(),"returnToDesktop":self.returnToDesktop],timeout:14)
+                    self.stoppedCleanly = result["stopped"] as? Bool == true && result["desktopAllowed"] as? Bool == true
+                    self.record(self.stoppedCleanly ? "cleanup.hostRestored" : "cleanup.hostNotRestored")
+                } catch { self.stoppedCleanly = false; self.record("cleanup.hostStopFailed") }
+            }
+            client.onFailure = nil; client.close()
+            self.record("cleanup.apple.begin")
+            await self.session.disconnect()
+            self.record("cleanup.apple.returned")
+        },ended: { [weak self,weak model] in
+            guard let self,let model else { return }
+            self.control = nil; model.transitionPending = false
+            self.record("cleanup.ended")
+            // Back may already have opened My Devices while cleanup awaited.
+            guard model.destination != .devices else { return }
+            model.destination = .desktop
+            if self.returnToDesktop && self.stoppedCleanly { model.restoreDesktopAfterXR() }
+            else if let error = self.validationError ?? self.gate.error { model.error = error }
+        })
+    }
+
+    private func connectSystem(endpoint: FoveatedStreamingSession.Endpoint) async throws {
+        try await XRSystemConnection.connect(while: { [weak self] in self?.gate.phase == .connecting }) { [session] in
+            try await session.connect(endpoint:endpoint)
+        }
+        // A terminal notification can arrive before connect resumes. Do not
+        // mark the gate connected after ignoring that notification mid-connect.
+        if case .disconnected(let reason) = session.status { throw reason }
+    }
+
+    private func endpoint(address:String,port:UInt16) throws -> FoveatedStreamingSession.Endpoint {
+        guard let port = NWEndpoint.Port(rawValue:port) else { throw FocusControlClient.Failure.protocolViolation }
+        if let ip = IPv4Address(address) { return .local(ipAddress:ip,port:port) }
+        if let ip = IPv6Address(address) { return .local(ipAddress:ip,port:port) }
+        throw FocusControlClient.Failure.protocolViolation
+    }
+
+    private static func message(for error:Error) -> String {
+        if let reason = error as? FoveatedStreamingSession.DisconnectReason {
+            if reason == .unauthorized { return "Immersive Mode was not authorized." }
+            if reason == .unavailable { return "Immersive Mode is unavailable on this PC." }
+            if reason == .endpointInitiatedDisconnect { return "The PC ended Immersive Mode." }
+        }
+        guard let failure = error as? FocusControlClient.Failure else { return "Could not start Immersive Mode. Try again." }
+        switch failure {
+        case .rejected("busy"): return "This PC is already in use."
+        case .rejected("permissionRequired"): return "Immersive Mode was not allowed on your PC."
+        case .rejected("runtimeUnavailable"): return "Immersive Mode files are missing or invalid on this PC."
+        case .rejected("accessDisabled"): return "Access is disabled on this PC."
+        case .rejected("unsupported"): return "Immersive Mode is unavailable on this PC."
+        case .authentication: return "Could not verify this PC."
+        default: return "Could not start Immersive Mode. Check the Windows host."
+        }
+    }
+
+    // Retained only for the explicit manual development fixture.
+    func enter(model: AppModel, open: OpenImmersiveSpaceAction, close: DismissImmersiveSpaceAction) {
+        guard !gate.busy,!model.isImmersed else { return }
+        guard let number = UInt16(port),let endpoint = try? endpoint(address:address.trimmingCharacters(in:.whitespacesAndNewlines),port:number) else {
+            validationError = "Enter the PC’s IP address and port."; return
+        }
+        validationError = nil; returnToDesktop = true
+        model.stream.stopControl(); model.stream.disconnect()
+        model.destination = .focus; model.transitionPending = true
+        session.immersivePresentationBehaviors = .automatic(open,close)
+        gate.begin(timeout:.seconds(180),connect:{ [weak self] in
+                       guard let self else { throw CancellationError() }
+                       try await self.connectSystem(endpoint:endpoint)
+                   },
+                   disconnect:{ [session] in await session.disconnect() },ended:{ [weak self,weak model] in
+            guard let self,let model else { return }
+            model.transitionPending = false
+            guard model.destination != .devices else { return }
+            model.destination = .desktop
+            if self.returnToDesktop { model.restoreDesktopAfterXR() }
+        })
+    }
+
+}
+
+/// This exists only in the XR validation configuration of the same app target.
+/// The final product will select the host's supported Focus path automatically.
+struct XRFocusSetup: View {
+    @Bindable var model: AppModel
+    @Environment(\.openImmersiveSpace) private var openSpace
+    @Environment(\.dismissImmersiveSpace) private var closeSpace
+    var body: some View {
+        Section("Immersive Mode validation") {
+            if let host = model.devices.selected {
+                Button("Use Selected PC") { model.xrFocus.address = host.address }
+                    .disabled(model.xrFocus.gate.busy)
+            }
+            TextField("PC IP address", text: Binding(get: { model.xrFocus.address }, set: { model.xrFocus.address = $0 }))
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .disabled(model.xrFocus.gate.busy)
+            TextField("Port", text: Binding(get: { model.xrFocus.port }, set: { model.xrFocus.port = $0 }))
+                .keyboardType(.numberPad).disabled(model.xrFocus.gate.busy)
+            Button(model.xrFocus.gate.busy ? "Cancel Immersive Mode" : "Connect in Immersive Mode") {
+                if model.xrFocus.gate.busy { model.xrFocus.gate.stop() }
+                else { model.xrFocus.enter(model: model, open: openSpace, close: closeSpace) }
+            }
+            if let error = model.xrFocus.validationError ?? model.xrFocus.gate.error {
+                Text(error).foregroundStyle(.orange)
+            }
+        }.disabled(model.isImmersed)
+    }
+}
+
+struct XRFocusSurface: View {
+    @Bindable var model: AppModel
+    var body: some View {
+        RealityView { content, attachments in
+            if let controls = attachments.entity(for: "return") {
+                controls.position = [0, -0.25, -1.2]
+                content.add(controls)
+            }
+        } attachments: {
+            Attachment(id: "return") {
+                Button("Return to Window", systemImage: "arrow.down.right.and.arrow.up.left") {
+                    model.xrFocus.stop(returnToDesktop:true)
+                }
+                .labelStyle(.iconOnly)
+                .padding(12).glassBackgroundEffect()
+            }
+        }
+        .onAppear { model.xrFocus.record("presentation.appeared"); model.isImmersed = true; model.transitionPending = false }
+        .onDisappear {
+            model.xrFocus.record("presentation.disappeared")
+            model.isImmersed = false
+            model.xrFocus.gate.stop()
+        }
+    }
+}
+#endif

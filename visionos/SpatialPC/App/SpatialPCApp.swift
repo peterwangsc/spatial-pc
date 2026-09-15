@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(FoveatedStreaming)
+import FoveatedStreaming
+#endif
 
 @main
 struct SpatialPCApp: App {
@@ -10,6 +13,12 @@ struct SpatialPCApp: App {
         }
         .defaultSize(width: 900, height: 680)
         .onChange(of:scenePhase) { _, phase in model.handleScenePhase(phase) }
+        #if canImport(FoveatedStreaming)
+        ImmersiveSpace(foveatedStreaming: model.xrFocus.session) {
+            XRFocusSurface(model: model)
+        }
+        .immersionStyle(selection: .constant(.progressive(0...1, initialAmount:0.5)), in: .progressive)
+        #endif
         WindowGroup("PC Desktop",id:"pc-desktop",for:String.self) { _ in
             PCDesktopWindow(model:model)
         } defaultValue: { "primary" }

@@ -44,7 +44,7 @@ struct DesktopNavigationButton: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openImmersiveSpace) private var openSpace
     @Environment(\.dismissImmersiveSpace) private var closeSpace
-    private var label: String { action == .back ? "Back to My Devices" : model.isImmersed ? "Return to Window" : "Enter Focus Mode" }
+    private var label: String { action == .back ? "Back to My Devices" : model.isImmersed ? "Return to Window" : "Enter Immersive Mode" }
     private var symbol: String { action == .back ? "chevron.left" : model.isImmersed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right" }
     var body: some View {
         Button { navigate() } label: {
@@ -67,9 +67,24 @@ struct DesktopNavigationButton: View {
     private func navigate() {
         Task { @MainActor in
             guard !model.transitionPending else { return }
+            #if canImport(FoveatedStreaming)
+            if action == .focus, model.isImmersed, model.xrFocus.gate.busy {
+                model.xrFocus.stop(returnToDesktop:true)
+                return
+            }
+            if action == .focus, !model.isImmersed, model.devices.selected != nil {
+                model.xrFocus.enterPaired(model:model, open:openSpace, close:closeSpace)
+                return
+            }
+            if action == .back, model.xrFocus.gate.busy {
+                model.xrFocus.returnToDesktop = false
+                model.xrFocus.gate.stop()
+            }
+            #endif
             model.transitionPending = true
             model.stream.stopControl()
             if action == .back {
+                model.cancelDesktopRestoration()
                 model.stream.disconnect()
                 model.destination = .devices
                 openWindow(id:"controls")
@@ -84,7 +99,7 @@ struct DesktopNavigationButton: View {
                     dismissWindow(id:"controls")
                 case .error:
                     model.destination = .desktop
-                    model.error = "Could not open Focus Mode."
+                    model.error = "Could not open Immersive Mode."
                 case .userCancelled: model.destination = .desktop
                 @unknown default: model.destination = .desktop
                 }

@@ -4,6 +4,10 @@ import Foundation
 let root = URL(fileURLWithPath:#filePath).deletingLastPathComponent()
 let dependencyPath = (try? String(contentsOf:root.appendingPathComponent(".local/pairing/source-path.txt"),encoding:.utf8))?.trimmingCharacters(in:.whitespacesAndNewlines) ?? root.appendingPathComponent(".local/dependencies/boringssl").path
 let package = Package(name: "SpatialPCValidation", platforms: [.macOS(.v15)], targets: [
+    .target(name:"FocusControlCore",path:"visionos/SpatialPC/FocusControl",exclude:["FocusControlClient.swift"],sources:["FocusControlWire.swift","FocusHostResolver.swift"]),
+    .testTarget(name:"FocusControlTests",dependencies:["FocusControlCore"],path:"tests/FocusControlTests"),
+    .target(name:"XRCore",path:"visionos/SpatialPC/XR",exclude:["XRFocusSession.swift","Focus.entitlements"],sources:["XRConnectionGate.swift","XRDisconnectDetail.swift"]),
+    .testTarget(name:"XRCoreTests",dependencies:["XRCore"],path:"tests/XRCoreTests"),
     .target(name:"SpatialPake",path:"shared/pairing",exclude:["boringssl.lock.json","BORINGSSL-LICENSE","README.md"],sources:["spatial_pake.c"],publicHeadersPath:"include",
         cSettings:[.unsafeFlags(["-I",dependencyPath+"/include","-DBORINGSSL_PREFIX=SPATIALPC_BSSL"])],
         linkerSettings:[.linkedLibrary("c++"),.unsafeFlags([root.appendingPathComponent(".local/pairing/macosx/libcrypto.a").path])]),
