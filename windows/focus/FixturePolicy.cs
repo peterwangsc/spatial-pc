@@ -37,6 +37,7 @@ namespace FoveatedStreaming.WindowsSample
                 WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(executable))
             };
             info.EnvironmentVariables["XR_RUNTIME_JSON"] = manifest;
+            info.EnvironmentVariables["NV_CXR_FILE_LOGGING"] = "0";
             info.EnvironmentVariables.Remove("XR_ENABLE_API_LAYERS");
             info.EnvironmentVariables.Remove("XR_API_LAYER_PATH");
             info.EnvironmentVariables.Remove("XR_LOADER_DEBUG");

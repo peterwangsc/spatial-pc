@@ -39,6 +39,8 @@ namespace FoveatedStreaming.WindowsSample
             NV_RPC_ERROR_RPC_CALL_FAILED = -3,
             NV_RPC_ERROR_INVALID_PARAMETER = -4,
             NV_RPC_ERROR_MEMORY_ALLOCATION = -5,
+            NV_RPC_ERROR_CXR_STARTUP_FAILED = -6,
+            NV_RPC_ERROR_CXR_PORT_UNAVAILABLE = -7,
             NV_RPC_ERROR_UNKNOWN = -999
         }
 
@@ -92,7 +94,7 @@ namespace FoveatedStreaming.WindowsSample
             IntPtr client,
             string clientId,
             UIntPtr clientIdLength,
-            StringBuilder tokenBuffer,
+            [Out] byte[] tokenBuffer,
             UIntPtr tokenSize,
             out UIntPtr tokenSizeOut);
 
@@ -108,7 +110,7 @@ namespace FoveatedStreaming.WindowsSample
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern nv_rpc_result_t nv_rpc_client_get_supported_versions(IntPtr client, out nv_string_array_t versions_out);
 
-        [DllImport(DLL_NAME)]
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern nv_rpc_result_t nv_rpc_client_free_string_array(ref nv_string_array_t string_array);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]

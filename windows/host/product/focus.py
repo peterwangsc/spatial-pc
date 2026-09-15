@@ -31,7 +31,7 @@ class FocusDeployment:
             return result
         data=json.loads(path.read_text(encoding='utf-8'),object_pairs_hook=unique)
         expected={'version','runtimeVersion','managerVersion','reviewed','mediaSecurity',
-                  'manager','clientLibrary','manifest','scene','files'}
+                  'manager','clientLibrary','manifest','scene','runtimeConfig','files'}
         if not isinstance(data,dict) or set(data)!=expected or type(data['version']) is not int or data['version']!=1:
             raise ValueError('Invalid Focus deployment')
         if (data['runtimeVersion']!='6.2.3' or data['managerVersion']!='6.1.0' or
@@ -53,7 +53,7 @@ class FocusDeployment:
             if actual!=digest:raise ValueError('Focus dependency hash mismatch')
             resolved[name]=target
         result={}
-        for field in ('manager','clientLibrary','manifest','scene'):
+        for field in ('manager','clientLibrary','manifest','scene','runtimeConfig'):
             if not isinstance(data[field],str) or data[field] not in resolved:raise ValueError('Missing selected Focus file')
             result[field]=str(resolved[data[field]])
         if (Path(result['manager']).name!='NvStreamManager.exe' or
@@ -65,7 +65,7 @@ class FocusDeployment:
         manifest=json.loads(Path(result['manifest']).read_text(encoding='utf-8'),object_pairs_hook=unique)
         library=manifest.get('runtime',{}).get('library_path')
         if not isinstance(library,str):raise ValueError('Invalid runtime manifest')
-        runtime=(Path(result['manifest']).parent/library).resolve()
+        runtime=(Path(result['manifest']).parent/library.replace('\\','/')).resolve()
         if runtime not in resolved.values():raise ValueError('Unreviewed runtime library')
         # Every file in the deployment is inventoried; no hidden DLL/config sibling.
         actual_files={p.resolve() for p in (self.root/'focus').rglob('*') if p.is_file() and p!=path}
@@ -89,23 +89,32 @@ class NativeFocus:
                 limit=8192,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
             self.owner.assign(self.process.pid)
             # Helper blocks before loading vendor code until this message arrives.
-            payload={k:self.config[k] for k in ('manager','clientLibrary','manifest','scene')}
-            payload.update(command='start',sessionId=self.session_id,clientId=device_id)
+            payload={k:self.config[k] for k in ('manager','clientLibrary','manifest','scene','runtimeConfig')}
+            payload.update(command='prepare',sessionId=self.session_id,clientId=device_id)
             self.process.stdin.write(json.dumps(payload,separators=(',',':')).encode()+b'\n')
             await asyncio.wait_for(self.process.stdin.drain(),1)
             line=await asyncio.wait_for(self.process.stdout.readline(),15)
             if len(line)>8192:raise ValueError('Focus response exceeds bound')
             result=json.loads(line)
             if (not isinstance(result,dict) or set(result)!={'event','sessionId','fingerprint','token'} or
-                result['event']!='ready' or result['sessionId']!=self.session_id or
+                result['event']!='prepared' or result['sessionId']!=self.session_id or
                 not isinstance(result['fingerprint'],str) or not re.fullmatch('[0-9a-f]{64}',result['fingerprint']) or
                 not isinstance(result['token'],str) or not 1<=len(result['token'])<=4096 or
                 any(ord(c)<33 or ord(c)>126 for c in result['token'])):
                 raise ValueError('Focus trust response invalid')
             self.credentials=(result['fingerprint'],result['token'])
-            self.drain=asyncio.create_task(self._discard())
         except BaseException:
             await self.stop();raise
+
+    async def start_media(self):
+        if not self.alive() or self.credentials is None:raise ValueError('Focus is not prepared')
+        self.process.stdin.write(b'{"command":"startMedia"}\n')
+        await asyncio.wait_for(self.process.stdin.drain(),1)
+        line=await asyncio.wait_for(self.process.stdout.readline(),15)
+        if len(line)>8192:raise ValueError('Focus response exceeds bound')
+        if json.loads(line)!={'event':'ready','sessionId':self.session_id}:raise ValueError('Focus readiness invalid')
+        self.credentials=None
+        self.drain=asyncio.create_task(self._discard())
 
     async def _discard(self):
         while await self.process.stdout.read(4096):pass
@@ -137,30 +146,44 @@ class FocusController:
     def __init__(self,media,deployment,notify,factory=NativeFocus):
         self.media=media;self.deployment=deployment;self.notify=notify;self.factory=factory
         self.state='idle';self.adapter=None;self.token=None;self.session_id=None;self.device_id=None
-        self._configured=None
+        self._configured=None;self.starting_task=None;self.generation=0
 
     def capability(self):
         if self._configured is None:
             try:self.deployment.load();self._configured=True
             except (OSError,ValueError,KeyError,TypeError):self._configured=False
-        return dict(supported=True,configured=self._configured,state=self.state,
+        return dict(compiled=True,hardwareValidated=False,runtimeConfigured=self._configured,
+                    configured=self._configured,state=self.state,
                     available=self._configured and self.media.mode=='idle' and not self.media.failed,
-                    mediaSecurity='unresolved',remoteControl=False)
+                    mediaSecurity='development-only-unencrypted',remoteControl=False,
+                    pairing='apple-system-qr-separate-from-spp2')
 
-    async def start(self,device_id,prepare):
+    async def start(self,device_id,prepare,context=None):
         config=self.deployment.load() # Fail before changing normal desktop availability.
+        if context:config.update(context)
         token=self.media.claim('focus',device_id)
+        self.generation+=1;generation=self.generation;self.starting_task=asyncio.current_task()
         self.token=token;self.device_id=device_id;self.session_id=secrets.token_hex(16);self.state='starting'
         self.notify()
         try:
             await asyncio.wait_for(prepare(),5)
+            if self.generation!=generation:raise asyncio.CancelledError()
             self.adapter=self.factory(config,self.session_id)
             await asyncio.wait_for(self.adapter.start(device_id),16)
+            if self.generation!=generation:raise asyncio.CancelledError()
             self.state='ready';self.notify()
         except BaseException:
             await self.stop();raise
+        finally:self.starting_task=None
 
     async def stop(self):
+        self.generation+=1
+        starting=self.starting_task
+        if starting is not None and starting is not asyncio.current_task():
+            starting.cancel()
+            await asyncio.gather(starting,return_exceptions=True)
+            if self.media.failed:raise RuntimeError('Focus startup cleanup failed')
+            return
         if self.token is None:return
         self.state='stopping';self.notify();clean=False
         try:

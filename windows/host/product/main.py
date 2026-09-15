@@ -17,6 +17,7 @@ from .discovery import Discovery
 from .network import local_addresses,normalize
 from .media_owner import MediaOwner
 from .focus import FocusController,FocusDeployment
+from .focus_local import LocalFocus
 
 
 class Worker:
@@ -29,7 +30,7 @@ class Worker:
         self.message='Select a Private network and enable access when you are ready.'
         self.media=MediaOwner();self.encoder='mf';self.nvenc=capture.parent/'capture_nvenc.exe'
         self.focus=FocusController(self.media,focus_deployment or FocusDeployment(capture.parent.parent,development or xr_development),self.status,
-                                   **({'factory':focus_factory} if focus_factory else {}))
+                                   factory=focus_factory or LocalFocus)
 
     def status(self):
         self.notify(dict(event='status',enabled=self.enabled,connected=self.connected,message=self.message,
@@ -128,7 +129,8 @@ class Worker:
         expected={'status':{'command'},'enable':{'command','value'},'network':{'command','address'},
                   'pair':{'command'},'cancelPairing':{'command'},'approve':{'command','requestId','accepted'},
                   'revoke':{'command','deviceId'},'shutdown':{'command'},
-                  'desktopEncoder':{'command','value'},'startFocus':{'command','deviceId'},'stopFocus':{'command'}}
+                  'desktopEncoder':{'command','value'},'startFocus':{'command'},'stopFocus':{'command'},
+                  'focusBarcodeReceipt':{'command','requestId','accepted'}}
         if command not in expected or set(value)!=expected[command]:raise ValueError('Invalid local command')
         if command=='status':self.status()
         elif command=='desktopEncoder':
@@ -139,14 +141,16 @@ class Worker:
             if self.enabled:await self.start()
             else:self.status()
         elif command=='startFocus':
-            device_id=value['deviceId']
-            if not self.enabled or not isinstance(device_id,str) or not any(d['id']==device_id for d in self.identity.state['devices']):
-                raise ValueError('Focus requires enabled access and an approved paired device')
-            try:await self.focus.start(device_id,self.pause_desktop)
+            if not self.enabled:raise ValueError('Focus requires enabled access and local approval')
+            try:await self.focus.start(None,self.pause_desktop,{'_address':self.address,'_notify':self.notify})
             except BaseException:
                 if self.enabled and self.stream is None and not self.media.failed:await self.start_desktop()
                 raise
-            self.message='Focus development session ready. XR media protection is unresolved.';self.status()
+            self.message='Focus development window: connect on port 55000. Separate system QR pairing; XR media is not encrypted.';self.status()
+        elif command=='focusBarcodeReceipt':
+            if type(value['accepted']) is not bool or not isinstance(value['requestId'],str):raise ValueError('Invalid QR receipt')
+            adapter=self.focus.adapter
+            if adapter and hasattr(adapter,'barcode_receipt'):adapter.barcode_receipt(value['requestId'],value['accepted'])
         elif command=='stopFocus':await self.stop_focus()
         elif command=='enable':
             if type(value['value']) is not bool:raise ValueError('Invalid access preference')
@@ -184,7 +188,8 @@ class Worker:
         elif command=='revoke':
             if not isinstance(value['deviceId'],str) or len(value['deviceId'])!=32:raise ValueError('Invalid device')
             self.identity.revoke(value['deviceId'])
-            if self.focus.device_id==value['deviceId']:await self.stop_focus()
+            # System XR pairing cannot be mapped to an SPP2 device. Revoke stops all Focus.
+            if self.media.mode=='focus':await self.stop_focus()
             if self.stream and self.stream.connected_id==value['deviceId']:
                 await self.start() # Cancellation releases this device before accepting another.
             self.status()

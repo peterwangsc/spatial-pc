@@ -1,0 +1,10 @@
+# Review-only template. Never loaded from the source tree or enabled automatically.
+apiVersion: cloudxr.nvidia.com/v1beta1
+kind: OpenXRRuntimeConfiguration
+featureFlags:
+  deviceProfile: apple-vision-pro
+  runtimeFoveation: true
+  runtimeFoveationUnwarpedWidth: 3800
+  disableAlpha: true
+  audioStreaming: false
+  micStreaming: false

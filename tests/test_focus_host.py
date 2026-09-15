@@ -97,7 +97,7 @@ class FocusTests(unittest.IsolatedAsyncioTestCase):
 class InventoryTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
-        self.names=['NvStreamManager.exe','NvStreamManagerClient.dll','releases/6.2.3/openxr_cloudxr.json','releases/6.2.3/cloudxr.dll','scene.exe']
+        self.names=['NvStreamManager.exe','NvStreamManagerClient.dll','releases/6.2.3/openxr_cloudxr.json','releases/6.2.3/cloudxr.dll','scene.exe','runtime.yaml']
         files={}
         for name in self.names:
             path=self.root/'focus'/name;path.parent.mkdir(parents=True,exist_ok=True)
@@ -106,7 +106,7 @@ class InventoryTests(unittest.TestCase):
             path.write_bytes(payload);files[name]=hashlib.sha256(payload).hexdigest()
         (self.root/'native').mkdir();(self.root/'native'/'focus_bridge.exe').write_bytes(b'NOT EXECUTABLE')
         self.data=dict(version=1,runtimeVersion='6.2.3',managerVersion='6.1.0',reviewed=True,
-            mediaSecurity='development-only-unencrypted',manager=self.names[0],clientLibrary=self.names[1],manifest=self.names[2],scene=self.names[4],files=files)
+            mediaSecurity='development-only-unencrypted',manager=self.names[0],clientLibrary=self.names[1],manifest=self.names[2],scene=self.names[4],runtimeConfig=self.names[5],files=files)
         self.save();self.deployment=FocusDeployment(self.root,True)
     def save(self): (self.root/'focus'/'deployment.json').write_text(json.dumps(self.data))
     def tearDown(self):self.temp.cleanup()
@@ -150,22 +150,23 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.worker.pause_desktop=AsyncMock();self.worker.start_desktop=AsyncMock()
     async def asyncTearDown(self):await self.worker.stop();self.temp.cleanup()
     async def test_start_stop_local_owner_resume(self):
-        await self.worker.command({'command':'startFocus','deviceId':'a'*32})
+        await self.worker.command({'command':'startFocus'})
         self.worker.pause_desktop.assert_awaited_once();await self.worker.command({'command':'stopFocus'})
         self.worker.start_desktop.assert_awaited_once()
-    async def test_unpaired_start_refused(self):
-        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus','deviceId':'b'*32})
+    async def test_disabled_start_refused(self):
+        self.worker.enabled=False
+        with self.assertRaises(ValueError):await self.worker.command({'command':'startFocus'})
         self.worker.pause_desktop.assert_not_awaited()
     async def test_revoke_owner_releases_focus(self):
-        await self.worker.command({'command':'startFocus','deviceId':'a'*32})
+        await self.worker.command({'command':'startFocus'})
         await self.worker.command({'command':'revoke','deviceId':'a'*32})
         self.assertEqual(self.worker.media.mode,'idle');self.assertEqual(self.worker.identity.state['devices'],[])
     async def test_disable_cleans_focus_no_desktop_resume(self):
-        await self.worker.command({'command':'startFocus','deviceId':'a'*32})
+        await self.worker.command({'command':'startFocus'})
         await self.worker.command({'command':'enable','value':False})
         self.assertFalse(self.worker.enabled);self.worker.start_desktop.assert_not_awaited()
     async def test_encoder_while_focus_refused(self):
-        await self.worker.command({'command':'startFocus','deviceId':'a'*32})
+        await self.worker.command({'command':'startFocus'})
         with self.assertRaises(ValueError):await self.worker.command({'command':'desktopEncoder','value':'nvenc'})
         self.assertEqual(self.worker.encoder,'mf')
     async def test_missing_optional_encoder_does_not_change_default(self):
@@ -173,7 +174,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.worker.encoder,'mf')
     async def test_existing_pair_untouched_by_modes(self):
         before=json.dumps(self.worker.identity.state)
-        await self.worker.command({'command':'startFocus','deviceId':'a'*32});await self.worker.command({'command':'stopFocus'})
+        await self.worker.command({'command':'startFocus'});await self.worker.command({'command':'stopFocus'})
         self.assertEqual(json.dumps(self.worker.identity.state),before)
 
     async def test_xr_flag_preserves_consumer_ports(self):
