@@ -114,7 +114,7 @@ struct ControlCenter: View {
     private var settings: some View {
         NavigationStack {
             Form {
-                #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                #if canImport(FoveatedStreaming)
                 if ProcessInfo.processInfo.arguments.contains("--manual-focus") { XRFocusSetup(model: model) }
                 #endif
                 Section("Windows host") {

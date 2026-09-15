@@ -67,7 +67,7 @@ struct DesktopNavigationButton: View {
     private func navigate() {
         Task { @MainActor in
             guard !model.transitionPending else { return }
-            #if SPATIALPC_XR && canImport(FoveatedStreaming)
+            #if canImport(FoveatedStreaming)
             if action == .focus, model.isImmersed, model.xrFocus.gate.busy {
                 model.xrFocus.stop(returnToDesktop:true)
                 return

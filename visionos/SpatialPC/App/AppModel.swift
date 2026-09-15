@@ -7,7 +7,7 @@ final class AppModel {
     let discovery = HostDiscovery()
     let devices = PairedHostStore()
     let pairing = PairingClient()
-    #if SPATIALPC_XR && canImport(FoveatedStreaming)
+    #if canImport(FoveatedStreaming)
     let xrFocus = XRFocusSession()
     private var applicationActive = true
     func restoreDesktopAfterXR() {
@@ -24,7 +24,7 @@ final class AppModel {
     var error: String?
     var keyboardRequest = 0
     var desktopConnectionAllowed: Bool {
-        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+        #if canImport(FoveatedStreaming)
         return !xrFocus.gate.busy
         #else
         return true
@@ -37,7 +37,7 @@ final class AppModel {
     }
     func cancelDesktopRestoration() { reconnectOnForeground = false }
     func handleScenePhase(_ phase: ScenePhase) {
-        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+        #if canImport(FoveatedStreaming)
         applicationActive = phase == .active
         if phase == .background {
             let focusWasActive = xrFocus.gate.busy

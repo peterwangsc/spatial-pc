@@ -20,7 +20,7 @@ struct PCDesktopWindow: View {
             .overlay {
                 if !model.stream.hasFrames || focusOpening {
                     VStack(spacing:16) {
-                        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                        #if canImport(FoveatedStreaming)
                         if model.xrFocus.gate.busy {
                             ProgressView()
                             Text(model.xrFocus.stage)
@@ -49,7 +49,7 @@ struct PCDesktopWindow: View {
             .onDisappear {
                 // Closing the desktop must not leave an empty immersive environment.
                 model.stream.stopControl()
-                #if SPATIALPC_XR && canImport(FoveatedStreaming)
+                #if canImport(FoveatedStreaming)
                 if model.xrFocus.gate.busy && model.destination != .focus {
                     model.xrFocus.returnToDesktop = false
                     model.cancelDesktopRestoration()
@@ -72,7 +72,7 @@ struct PCDesktopWindow: View {
             }
     }
     private var focusOpening: Bool {
-        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+        #if canImport(FoveatedStreaming)
         return model.xrFocus.gate.phase == .connecting || model.xrFocus.gate.phase == .stopping
         #else
         return false

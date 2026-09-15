@@ -1,4 +1,4 @@
-#if SPATIALPC_XR && canImport(FoveatedStreaming)
+#if canImport(FoveatedStreaming)
 import SwiftUI
 import FoveatedStreaming
 import Network

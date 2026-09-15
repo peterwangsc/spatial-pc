@@ -1,5 +1,5 @@
 import SwiftUI
-#if SPATIALPC_XR && canImport(FoveatedStreaming)
+#if canImport(FoveatedStreaming)
 import FoveatedStreaming
 #endif
 
@@ -13,7 +13,7 @@ struct SpatialPCApp: App {
         }
         .defaultSize(width: 900, height: 680)
         .onChange(of:scenePhase) { _, phase in model.handleScenePhase(phase) }
-        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+        #if canImport(FoveatedStreaming)
         ImmersiveSpace(foveatedStreaming: model.xrFocus.session) {
             XRFocusSurface(model: model)
         }

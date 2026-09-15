@@ -1,6 +1,6 @@
 # Paired PC to XR Focus — development flow
 
-The desktop remains the default connection. In the XR build, its fullscreen
+The desktop remains the default connection. Its fullscreen
 button uses the saved PC's authenticated control endpoint, requests the explicit
 Windows Focus grant if needed, then stops desktop input/capture and prepares the
 same host's Apple session. Windows presents its QR and visionOS owns scanning.
@@ -21,14 +21,18 @@ the returned Apple IP must match the authenticated numeric control endpoint.
 
 ## Current development evidence
 
-- XR configuration compiles with the same app ID and Apple session entitlement.
+- Debug, Release, Lab, and the legacy XR configuration include XR by default,
+  with visionOS 26.4 as the minimum and the Apple session entitlement.
+  Configuration differences control diagnostics/optimization, not XR availability.
 - 47 XCTest cases and 12 Swift Testing cases pass, including nine new wire
   methods and seven resolver cases with no real DNS/desktop connection.
 - The actual compiled Swift transport passed permission, fake prepare,
   heartbeat, stop and cleanup against reviewed Windows-host Python f96c004
   running on Mac loopback. A wrong saved server-leaf pin was rejected.
   Disposable fixture identity was imported into process memory only.
-- Native Windows interoperability and the physical XR flow still need testing.
+- The actual Swift client also passed against the packaged Windows dispatcher
+  through a TLS-opaque SSH forward, including pin rejection and EOF cleanup.
+  The physical XR flow still needs testing.
   The scene is the existing plain XR development scene; this does not turn the
   Windows desktop into XR content. Apple trust remains separate, and this
   development XR media path remains unencrypted.
