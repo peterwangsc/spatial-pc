@@ -6,7 +6,7 @@ let dependencyPath = (try? String(contentsOf:root.appendingPathComponent(".local
 let package = Package(name: "SpatialPCValidation", platforms: [.macOS(.v15)], targets: [
     .target(name:"FocusControlCore",path:"visionos/SpatialPC/FocusControl",exclude:["FocusControlClient.swift"],sources:["FocusControlWire.swift","FocusHostResolver.swift"]),
     .testTarget(name:"FocusControlTests",dependencies:["FocusControlCore"],path:"tests/FocusControlTests"),
-    .target(name:"XRCore",path:"visionos/SpatialPC/XR",exclude:["XRFocusSession.swift","Focus.entitlements"],sources:["XRConnectionGate.swift"]),
+    .target(name:"XRCore",path:"visionos/SpatialPC/XR",exclude:["XRFocusSession.swift","Focus.entitlements"],sources:["XRConnectionGate.swift","XRDisconnectDetail.swift"]),
     .testTarget(name:"XRCoreTests",dependencies:["XRCore"],path:"tests/XRCoreTests"),
     .target(name:"SpatialPake",path:"shared/pairing",exclude:["boringssl.lock.json","BORINGSSL-LICENSE","README.md"],sources:["spatial_pake.c"],publicHeadersPath:"include",
         cSettings:[.unsafeFlags(["-I",dependencyPath+"/include","-DBORINGSSL_PREFIX=SPATIALPC_BSSL"])],

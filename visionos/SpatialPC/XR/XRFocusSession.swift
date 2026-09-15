@@ -22,23 +22,38 @@ final class XRFocusSession {
         let stage: String
         let code: Int?
         let errorDomain: String?
+        let detail: XRDisconnectDetail?
     }
     @ObservationIgnored private var diagnosticEvents: [DiagnosticEvent] = []
     @ObservationIgnored private let diagnosticQueue = DispatchQueue(label: "SpatialPC.immersive-diagnostics", qos: .utility)
+    @ObservationIgnored private var privateDiagnosticValues: [String] = []
+    @ObservationIgnored private var describedOrigins: Set<String> = []
+    private var firstDisconnectExplanation: String?
 
-    // Fixed stage/reason names only: never endpoint, token, QR, or error userInfo.
-    func record(_ event: String, code: Int? = nil, errorDomain: String? = nil) {
+    // Fixed stages plus a bounded, redacted public LocalizedError description.
+    // Never reflect SDK private state or retain error userInfo/QR/control payloads.
+    func record(_ event: String, code: Int? = nil, errorDomain: String? = nil, detail: XRDisconnectDetail? = nil) {
         let domain = errorDomain.flatMap { value in
             value.utf8.count <= 96 && value.range(of:"^[A-Za-z0-9_.-]+$",options:.regularExpression) != nil ? value : nil
         }
         diagnosticEvents.append(DiagnosticEvent(time:Date().timeIntervalSince1970,event:event,
-                                                phase:String(describing:gate.phase),stage:stage,code:code,errorDomain:domain))
+                                                phase:String(describing:gate.phase),stage:stage,code:code,errorDomain:domain,detail:detail))
         if diagnosticEvents.count > 96 { diagnosticEvents.removeFirst(diagnosticEvents.count - 96) }
         let snapshot = diagnosticEvents
         let url = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
             .appendingPathComponent("immersive-diagnostics.json")
         diagnosticQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to:url,options:.atomic) }
+        }
+    }
+
+    private func describe(_ reason: FoveatedStreamingSession.DisconnectReason, origin: String) {
+        guard gate.phase == .connecting || gate.phase == .connected,
+              reason != .appInitiatedDisconnect, describedOrigins.insert(origin).inserted else { return }
+        let detail = XRDisconnectDetail(reason.errorDescription, privateValues:privateDiagnosticValues)
+        record("apple.description." + origin, detail:detail)
+        if firstDisconnectExplanation == nil, let text = detail.text, !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            firstDisconnectExplanation = text
         }
     }
 
@@ -62,7 +77,10 @@ final class XRFocusSession {
         // Track only the framework status. Reading gate state inside the tracking
         // closure would also observe begin() and could cancel a fresh connection.
         switch status {
-        case .disconnected(let reason): record("apple.disconnected." + Self.reasonName(reason)); gate.sessionDisconnected()
+        case .disconnected(let reason):
+            record("apple.disconnected." + Self.reasonName(reason))
+            describe(reason,origin:"status")
+            gate.sessionDisconnected()
         case .initialized: record("apple.initialized")
         case .connecting: record("apple.connecting")
         case .connected: record("apple.connected")
@@ -89,6 +107,9 @@ final class XRFocusSession {
     func enterPaired(model: AppModel, open: OpenImmersiveSpaceAction, close: DismissImmersiveSpaceAction) {
         guard !gate.busy,!model.isImmersed,let host = model.devices.selected else { return }
         stoppedCleanly = false; returnToDesktop = false
+        firstDisconnectExplanation = nil; describedOrigins = []
+        privateDiagnosticValues = [host.name,host.address,host.serverName,host.id,host.deviceID,host.keyTag,
+                                   host.serviceName ?? "",host.serviceDomain ?? ""]
         validationError = nil; stage = "Connecting"
         record("enterPaired")
         model.transitionPending = true
@@ -138,6 +159,7 @@ final class XRFocusSession {
                 let prepared = try await client.request("focus.prepare",parameters:["intent":"enter"],timeout:32)
                 self.record("host.prepared")
                 let hostAddress = try client.appleAddress(from:prepared)
+                self.privateDiagnosticValues.append(hostAddress)
                 try Task.checkCancellation()
                 let endpoint = try self.endpoint(address:hostAddress,port:55000)
                 self.stage = "Scan the code on your PC"
@@ -155,6 +177,7 @@ final class XRFocusSession {
                 // Preserve only recognized categories and standard nested codes,
                 // never the framework's arbitrary localized text or userInfo.
                 if let reason = error as? FoveatedStreamingSession.DisconnectReason {
+                    self.describe(reason,origin:"connect")
                     let text = (reason.errorDescription ?? "").prefix(512).lowercased()
                     for word in ["certificate", "authentication", "permission", "network", "timeout", "refused",
                                  "version", "codec", "configuration", "unsupported", "presentation", "immersive",
@@ -168,7 +191,7 @@ final class XRFocusSession {
                     self.record("connect.underlying" + String(depth),code:current.code,errorDomain:current.domain)
                     nested = current.userInfo[NSUnderlyingErrorKey] as? NSError
                 }
-                if !Task.isCancelled { self.validationError = Self.message(for:error) }
+                if !Task.isCancelled { self.validationError = self.firstDisconnectExplanation ?? Self.message(for:error) }
                 throw error
             }
         },disconnect: { [weak self] in

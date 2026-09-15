@@ -60,8 +60,7 @@ headset frames. Apple and Windows now keep bounded stage metadata so subsequent
 attempts can locate that failure without retaining credentials or desktop content.
 
 Build 29 retains the cancellation correction and adds presentation appearance,
-disappearance, and bounded underlying-error context. It is installed but has not
-been physically tested. An independent source review found no further mismatch
+disappearance, and bounded underlying-error context. An independent source review found no further mismatch
 between its automatic presentation setup and the Apple sample.
 
 The PC completed a separate non-rendering probe using the installed Manager 6.1.0,
@@ -84,3 +83,20 @@ Foveated Streaming template to `UIApplicationSceneManifest`. The built manifest
 matches the template; the signed build and streaming entitlement checks pass.
 This tests a concrete configuration omission, not a confirmed explanation of
 the disconnect. The SwiftUI progressive style and streaming code are unchanged.
+
+Physical build-30 tests, including a new enrollment, still failed after QR
+approval. The earlier `configuration` keyword did not recur, which does not
+establish a causal effect of the manifest change. The latest matched Windows
+attempt completed D3D11 device, OpenXR session, reference-space, view and swapchain
+initialization, began the session, and entered its first frame wait. No completed
+frame or negative API result was recorded before cancellation. The headset
+reported an unclassified public disconnect reason; reconnect restored the desktop.
+
+Build 31 preserves the public `DisconnectReason.errorDescription` from the first
+non-app-initiated status and connect error before cleanup, instead of relying only
+on keyword matches and NSError bridging. Descriptions distinguish absent, empty,
+and oversized values; known peer values, URLs, IP addresses and token-like values
+are redacted before a 1,024-character cap. The existing error view shows the first
+available redacted description. No private SDK state or error userInfo is dumped.
+Fourteen diagnostic/lifecycle tests and the signed visionOS build pass. This is a
+diagnostic change, not a connection fix; physical validation remains pending.
