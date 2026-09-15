@@ -72,3 +72,15 @@ substituted its own scene executable, sent no application payload, and cleaned u
 all owned children. These results do not validate the installed renderer, Apple
 authorization or signaling, AVP network reachability, or streamed frames. No
 additional physical test or successful XR connection is claimed.
+
+The next physical build-29 test again failed after QR approval, with a fixed
+keyword match for `configuration` in Apple's error description and no immersive
+presentation event. Windows recorded successful instance/system/graphics
+requirements calls before cleanup, but no device/session or frame result.
+Reconnect restored the desktop, and neither build-29 attempt crashed.
+
+Build 30 adds the immersive scene role and default window role from Xcode's
+Foveated Streaming template to `UIApplicationSceneManifest`. The built manifest
+matches the template; the signed build and streaming entitlement checks pass.
+This tests a concrete configuration omission, not a confirmed explanation of
+the disconnect. The SwiftUI progressive style and streaming code are unchanged.

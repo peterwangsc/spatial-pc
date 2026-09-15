@@ -10,7 +10,15 @@
 <key>ITSAppUsesNonExemptEncryption</key><false/>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>UIApplicationSupportsIndirectInputEvents</key><true/>
-<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><true/></dict>
+<key>UIApplicationSceneManifest</key><dict>
+<key>UIApplicationSupportsMultipleScenes</key><true/>
+<key>UIApplicationPreferredDefaultSceneSessionRole</key><string>UIWindowSceneSessionRoleApplication</string>
+<key>UISceneConfigurations</key><dict>
+<key>UISceneSessionRoleImmersiveSpaceApplication</key><array><dict>
+<key>UISceneInitialImmersionStyle</key><string>UIImmersionStyleMixed</string>
+</dict></array>
+</dict>
+</dict>
 <key>NSLocalNetworkUsageDescription</key><string>Find and connect securely to your PC on the local network.</string>
 <key>NSBonjourServices</key><array><string>_spatialpc._tcp</string><string>_spatialpc-pair._tcp</string></array>
 </dict></plist>
