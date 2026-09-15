@@ -106,6 +106,8 @@ final class XRFocusSession {
         },ended: { [weak self,weak model] in
             guard let self,let model else { return }
             self.control = nil; model.transitionPending = false
+            // Back may already have opened My Devices while cleanup awaited.
+            guard model.destination != .devices else { return }
             model.destination = .desktop
             if self.returnToDesktop && self.stoppedCleanly { model.restoreDesktopAfterXR() }
             else if let error = self.validationError ?? self.gate.error { model.error = error }
@@ -143,7 +145,9 @@ final class XRFocusSession {
         gate.begin(timeout:.seconds(180),connect:{ [session] in try await session.connect(endpoint:endpoint) },
                    disconnect:{ [session] in await session.disconnect() },ended:{ [weak self,weak model] in
             guard let self,let model else { return }
-            model.transitionPending = false; model.destination = .desktop
+            model.transitionPending = false
+            guard model.destination != .devices else { return }
+            model.destination = .desktop
             if self.returnToDesktop { model.restoreDesktopAfterXR() }
         })
     }
