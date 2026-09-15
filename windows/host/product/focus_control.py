@@ -250,6 +250,7 @@ class ControlSession:
         self.generation = 0; self.live = True; self.prepared = False
         self.session_id = None; self.last_session_id = None; self.origin = None
         self.operation = None; self.cleanup_task = None; self.runner = None
+        self.operation_cancellation = None; self.operation_kind = None
         self.deadline = certificate_deadline; self.last_record = time.monotonic(); self.last_caps = -float('inf')
         self.outgoing = asyncio.Queue(maxsize=16); self.stops = set()
         self.cleanup_failed = False; self.final_response = asyncio.Event()
@@ -262,13 +263,13 @@ class ControlSession:
         if not self.hub.worker.enabled: raise ControlError('accessDisabled')
         if self.hub.worker.address != self.local_address: raise ControlError('interfaceChanged')
 
-    def emit(self, value, generation=None, stale=None):
+    def emit(self, value, generation=None, stale=None, cancellation=None):
         if not self.live: return
-        try: self.outgoing.put_nowait((dict(version=1, **value), generation, stale))
+        try: self.outgoing.put_nowait((dict(version=1, **value), generation, stale, cancellation))
         except asyncio.QueueFull: self.disconnect()
 
-    def result(self, request_id, result, generation=None, stale=None):
-        self.emit(dict(type='result', id=request_id, result=result), generation, stale)
+    def result(self, request_id, result, generation=None, stale=None, cancellation=None):
+        self.emit(dict(type='result', id=request_id, result=result), generation, stale, cancellation)
 
     def error(self, request_id, code):
         self.emit(dict(type='error', id=request_id, code=code))
@@ -280,8 +281,12 @@ class ControlSession:
     async def _write(self):
         try:
             while True:
-                value, generation, stale = await self.outgoing.get()
-                if generation is not None and generation != self.generation:
+                value, generation, stale, cancellation = await self.outgoing.get()
+                # Advancing to another operation is not cancellation of a
+                # completed terminal result. Each queued result retains only
+                # its own bounded operation's cancellation token.
+                invalid = cancellation.is_set() if cancellation is not None else generation is not None and generation != self.generation
+                if invalid:
                     if stale == 'permission':
                         value = dict(version=1, type='result', id=value['id'], result=dict(granted=False, reason='canceled'))
                     elif stale == 'prepare':
@@ -302,6 +307,8 @@ class ControlSession:
 
     def begin_cleanup(self):
         if self.cleanup_task is None:
+            if self.operation_cancellation is not None and (self.operation_kind == 'focus.prepare' or self.operation and not self.operation.done()):
+                self.operation_cancellation.set()
             self.generation += 1  # Invalidate success and side effects before ANY await.
             if self.operation and self.operation is not asyncio.current_task() and not self.operation.done(): self.operation.cancel()
             self.cleanup_task = asyncio.create_task(self._cleanup())
@@ -342,18 +349,19 @@ class ControlSession:
                 self.cleanup_task = None; self.operation = None; self.origin = None
 
     async def _operation(self, request_id, operation, generation):
+        cancellation = self.operation_cancellation
         try:
             self.check(generation)
             if operation == 'focus.requestPermission':
                 self.progress('awaitingPermission')
                 result = await self.hub.request_permission(self, generation)
-                self.result(request_id, result, generation, 'permission')
+                self.result(request_id, result, generation, 'permission', cancellation)
             else:
                 if not self.hub.allowed(self): raise ControlError('permissionRequired')
                 if not self.hub.worker.focus.capability()['runtimeConfigured']: raise ControlError('unsupported')
                 self.hub.budget(self)
                 result = await self.hub.prepare(self, generation)
-                self.result(request_id, result, generation, 'prepare')
+                self.result(request_id, result, generation, 'prepare', cancellation)
         except asyncio.CancelledError:
             if operation == 'focus.requestPermission': self.result(request_id, dict(granted=False, reason='canceled'))
             else: self.error(request_id, 'canceled')
@@ -377,6 +385,23 @@ class ControlSession:
                 self.disconnect(); return
             if self.session_id and self.hub.worker.focus.adapter and not self.hub.worker.focus.adapter.alive():
                 self.begin_cleanup()
+
+    async def _finish_requests(self):
+        # There are no more legal request IDs, but peer loss and extra bytes
+        # still cancel pending work immediately. This is the sole reader after
+        # read(4096) has completed, not a second concurrent protocol reader.
+        peer_input = asyncio.create_task(self.reader.read(1))
+        response = asyncio.create_task(self.final_response.wait())
+        try:
+            done, _ = await asyncio.wait([peer_input, response], timeout=71,
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if peer_input in done or response not in done:
+                if peer_input in done: peer_input.result()
+                self.live = False
+                self.begin_cleanup()
+        finally:
+            peer_input.cancel(); response.cancel()
+            await asyncio.gather(peer_input, response, return_exceptions=True)
 
     async def run(self):
         self.runner = asyncio.current_task()
@@ -408,11 +433,12 @@ class ControlSession:
                         try:
                             self.hub.claim(self)
                             self.generation += 1; self.origin = request_id
+                            self.operation_cancellation = asyncio.Event(); self.operation_kind = operation
                             self.operation = asyncio.create_task(self._operation(request_id, operation, self.generation))
                         except ControlError as error: self.error(request_id, error.code)
                 else: self.error(request_id, 'unsupported')
                 if request_id == 4096:
-                    await asyncio.wait_for(self.final_response.wait(), 71)
+                    await self._finish_requests()
         except (asyncio.CancelledError, ValueError, OSError, TimeoutError, asyncio.IncompleteReadError):
             pass
         finally:

@@ -47,9 +47,17 @@ restoration. No capture or client reconnection is triggered by restoration.
 Cleanup uncertainty poisons media ownership. An old session's repeated Stop
 cannot cancel a newer session.
 
+At request4096, EOF and extra-byte detection remain active during pending work;
+normal closure waits for the final response to drain. Terminal responses carry
+their own operation cancellation state, so a subsequent prepare or Stop cannot
+rewrite a completed permission decision. The Mac review's three private edge
+fixtures also pass on Windows; equivalent expanded cases are retained publicly.
+Capability/prepare rate limits return `rateLimited` while keeping the socket;
+framing/ID violations and queue overflow close it and cancel owned work.
+
 ## Validation
 
-Windows validation: 97 Python tests run, 96 passed and one pre-existing native
+Windows validation: 104 Python tests run, 103 passed and one pre-existing native
 fixture test skipped because that optional fixture binary is absent from this
 isolated checkout. Release UI compilation passed. Offscreen wizard fixtures:
 82 assertions passed, including the later idle-health recovery regression from

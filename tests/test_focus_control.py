@@ -116,6 +116,8 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['consumerReady']); self.assertFalse(result['hardwareValidated'])
         self.assertEqual(result['systemTrust'], 'apple-qr-separate')
         self.assertEqual((await self.terminal(self.send('capabilities')))['code'], 'rateLimited')
+        self.assertEqual((await self.terminal(self.send('heartbeat')))['type'],'result')
+        self.assertTrue(self.session.live)
 
     async def test_prepare_stop_restores_listener_even_return_false(self):
         sid = await self.prepare()
@@ -249,6 +251,8 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
             await self.prepare(); await self.terminal(self.send('focus.stop', sessionId=None, returnToDesktop=False))
         self.assertEqual((await self.terminal(self.send('focus.prepare', intent='enter')))['code'], 'rateLimited')
         self.assertEqual(self.worker.pause_desktop.await_count, 3)
+        self.assertEqual((await self.terminal(self.send('heartbeat')))['type'],'result')
+        self.assertTrue(self.session.live)
 
     async def test_uncertain_cleanup_poison_prevents_restore(self):
         class Bad(FakeAdapter):
@@ -295,15 +299,93 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.worker.start_desktop.assert_awaited_once()
 
     async def test_last_request_response_then_owned_cleanup(self):
-        for index in range(4095):
-            self.send('heartbeat')
-            if index%8==7:await self.terminal(self.number)
-        await self.terminal(self.number)
+        await self.consume_until_final_request()
         final=self.send('focus.prepare',intent='enter')
         self.assertEqual(final,4096)
         self.assertEqual((await self.terminal(final))['type'],'result')
         await asyncio.wait_for(self.task,2)
         self.worker.start_desktop.assert_awaited_once()
+
+    async def consume_until_final_request(self):
+        for index in range(4095):
+            self.send('heartbeat')
+            if index%8==7:await self.terminal(self.number)
+        await self.terminal(self.number)
+
+    async def final_pending_disconnect(self, permission=False, extra_input=False):
+        await self.consume_until_final_request()
+        if permission:
+            self.identity.state['devices'][0]['allowFocusControl']=False
+            self.send('focus.requestPermission')
+            await self.until(lambda:self.hub.permission is not None)
+            approval=self.hub.permission[2]
+        else:
+            entered=asyncio.Event()
+            async def pause():entered.set();await asyncio.Event().wait()
+            self.worker.pause_desktop=pause
+            self.send('focus.prepare',intent='enter');await entered.wait()
+        self.assertEqual(self.number,4096)
+        if extra_input:self.reader.feed_data(b'X')
+        else:self.reader.feed_eof()
+        done,_=await asyncio.wait([self.task],timeout=.3)
+        self.assertIn(self.task,done,'final-ID peer loss must cancel without a test-issued cancellation')
+        self.assertFalse(any(r['id']==4096 and r['type']=='result' for r in self.writer.records))
+        if permission:
+            self.hub.permission_decision(approval,True)
+            self.assertEqual(self.identity.commits,0)
+            self.worker.pause_desktop.assert_not_awaited()
+        else:self.worker.start_desktop.assert_awaited_once()
+
+    async def test_final_id_eof_cancels_pending_prepare(self):
+        await self.final_pending_disconnect()
+
+    async def test_final_id_eof_cancels_pending_permission(self):
+        await self.final_pending_disconnect(permission=True)
+
+    async def test_final_id_extra_bytes_cancel_pending_prepare(self):
+        await self.final_pending_disconnect(extra_input=True)
+
+    async def test_final_response_drains_before_normal_close(self):
+        await self.consume_until_final_request()
+        self.writer.block=asyncio.Event()
+        final=self.send('heartbeat');await self.terminal(final)
+        self.assertFalse(self.session.final_response.is_set());self.assertFalse(self.task.done())
+        self.writer.block.set()
+        done,_=await asyncio.wait([self.task],timeout=.3)
+        self.assertIn(self.task,done);self.assertTrue(self.session.final_response.is_set())
+
+    async def completed_permission_then_prepare(self, cancel_prepare=False):
+        self.writer.block=asyncio.Event()
+        self.send('heartbeat');await self.until(lambda:len(self.writer.records)==1)
+        permission=self.send('focus.requestPermission')
+        await self.until(lambda:self.session.operation is not None and self.session.operation.done())
+        prepare=self.send('focus.prepare',intent='enter')
+        await self.until(lambda:self.session.session_id is not None and self.session.operation.done())
+        if cancel_prepare:
+            self.send('focus.stop',sessionId=None,returnToDesktop=False)
+            await self.until(lambda:self.worker.media.mode=='idle')
+        self.writer.block.set()
+        self.assertEqual((await self.terminal(permission))['result'],dict(granted=True,reason='none'))
+        response=await self.terminal(prepare)
+        if cancel_prepare:self.assertEqual(response['code'],'canceled')
+        else:self.assertEqual(response['type'],'result')
+
+    async def test_new_operation_preserves_completed_permission_result(self):
+        await self.completed_permission_then_prepare()
+
+    async def test_cancel_new_prepare_preserves_completed_permission_result(self):
+        await self.completed_permission_then_prepare(cancel_prepare=True)
+
+    async def test_idle_stop_preserves_completed_permission_result(self):
+        self.writer.block=asyncio.Event()
+        self.send('heartbeat');await self.until(lambda:len(self.writer.records)==1)
+        permission=self.send('focus.requestPermission')
+        await self.until(lambda:self.session.operation is not None and self.session.operation.done())
+        stop=self.send('focus.stop',sessionId=None,returnToDesktop=False)
+        await self.until(lambda:self.session.operation is None)
+        self.writer.block.set()
+        self.assertEqual((await self.terminal(permission))['result'],dict(granted=True,reason='none'))
+        await self.terminal(stop)
 
     async def test_changed_interface_does_not_restore_on_another_address(self):
         await self.prepare();self.worker.address='127.0.0.2'
