@@ -39,14 +39,14 @@ final class XRConnectionGate {
             } catch {
                 guard let self else { return }
                 self.connection = nil
-                if self.phase != .stopping { self.error = "Could not connect to Focus." }
+                if self.phase != .stopping { self.error = "Could not connect to Immersive Mode." }
                 self.stop()
             }
         }
         deadline = Task { [weak self] in
             do { try await Task.sleep(for: timeout) } catch { return }
             guard let self, self.phase == .connecting else { return }
-            self.error = "Focus connection timed out."
+            self.error = "Immersive Mode connection timed out."
             self.stop()
         }
         return true

@@ -15,6 +15,37 @@ final class XRFocusSession {
     var configured: Bool { !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var returnToDesktop = false
 
+    private struct DiagnosticEvent: Encodable, Sendable {
+        let time: Double
+        let event: String
+        let phase: String
+        let stage: String
+        let code: Int?
+    }
+    @ObservationIgnored private var diagnosticEvents: [DiagnosticEvent] = []
+    @ObservationIgnored private let diagnosticQueue = DispatchQueue(label: "SpatialPC.immersive-diagnostics", qos: .utility)
+
+    // Fixed stage/reason names only: never endpoint, token, QR, or error userInfo.
+    func record(_ event: String, code: Int? = nil) {
+        diagnosticEvents.append(DiagnosticEvent(time:Date().timeIntervalSince1970,event:event,
+                                                phase:String(describing:gate.phase),stage:stage,code:code))
+        if diagnosticEvents.count > 96 { diagnosticEvents.removeFirst(diagnosticEvents.count - 96) }
+        let snapshot = diagnosticEvents
+        let url = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
+            .appendingPathComponent("immersive-diagnostics.json")
+        diagnosticQueue.async {
+            if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to:url,options:.atomic) }
+        }
+    }
+
+    private static func reasonName(_ reason: FoveatedStreamingSession.DisconnectReason) -> String {
+        if reason == .appInitiatedDisconnect { return "appInitiated" }
+        if reason == .endpointInitiatedDisconnect { return "endpointInitiated" }
+        if reason == .unauthorized { return "unauthorized" }
+        if reason == .unavailable { return "unavailable" }
+        return "other"
+    }
+
     init() { observeStatus() }
 
     private func observeStatus() {
@@ -26,7 +57,17 @@ final class XRFocusSession {
         }
         // Track only the framework status. Reading gate state inside the tracking
         // closure would also observe begin() and could cancel a fresh connection.
-        if case .disconnected = status { gate.stop() }
+        switch status {
+        case .disconnected(let reason): record("apple.disconnected." + Self.reasonName(reason)); gate.stop()
+        case .initialized: record("apple.initialized")
+        case .connecting: record("apple.connecting")
+        case .connected: record("apple.connected")
+        case .disconnecting: record("apple.disconnecting")
+        case .paused: record("apple.paused")
+        case .pausing: record("apple.pausing")
+        case .resuming: record("apple.resuming")
+        @unknown default: record("apple.otherStatus")
+        }
     }
 
     @ObservationIgnored private var control: FocusControlClient?
@@ -35,6 +76,7 @@ final class XRFocusSession {
 
     func stop(returnToDesktop: Bool = false) {
         self.returnToDesktop = returnToDesktop
+        record(returnToDesktop ? "stop.returnToDesktop" : "stop")
         gate.stop()
     }
 
@@ -44,21 +86,24 @@ final class XRFocusSession {
         guard !gate.busy,!model.isImmersed,let host = model.devices.selected else { return }
         stoppedCleanly = false; returnToDesktop = false
         validationError = nil; stage = "Connecting"
+        record("enterPaired")
         model.transitionPending = true
         model.cancelDesktopRestoration()
         let client = FocusControlClient(); control = client
         client.onFailure = { [weak self] in
             guard let self,self.gate.busy else { return }
+            self.record("control.failed")
             self.returnToDesktop = false
-            self.validationError = "Focus disconnected. Reconnect to your PC."
+            self.validationError = "Immersive Mode disconnected. Reconnect to your PC."
             self.gate.stop()
         }
         client.onProgress = { [weak self] state in
             guard let self else { return }
+            self.record("host." + state)
             switch state {
             case "awaitingPermission": self.stage = "Approve on your PC"
             case "waitingForSystem", "qrPresented": self.stage = "Scan the code on your PC"
-            case "startingMedia", "mediaReady": self.stage = "Starting Focus"
+            case "startingMedia", "mediaReady": self.stage = "Starting Immersive Mode"
             case "stopped", "failed":
                 if self.gate.phase != .stopping { self.returnToDesktop = false; self.gate.stop() }
             default: break
@@ -69,6 +114,7 @@ final class XRFocusSession {
             guard let self,let model else { throw CancellationError() }
             do {
                 try await client.connect(host:host)
+                self.record("control.connected")
                 let capabilities = try await client.request("capabilities")
                 guard capabilities["runtimeConfigured"] as? Bool == true,
                       capabilities["accessEnabled"] as? Bool == true else { throw FocusControlClient.Failure.rejected("unsupported") }
@@ -80,14 +126,23 @@ final class XRFocusSession {
                 try Task.checkCancellation()
                 model.stream.stopControl(); model.stream.disconnect()
                 model.destination = .focus
-                self.stage = "Starting Focus"
+                self.stage = "Starting Immersive Mode"
                 let prepared = try await client.request("focus.prepare",parameters:["intent":"enter"],timeout:32)
+                self.record("host.prepared")
                 let hostAddress = try client.appleAddress(from:prepared)
                 try Task.checkCancellation()
                 let endpoint = try self.endpoint(address:hostAddress,port:55000)
                 self.stage = "Scan the code on your PC"
+                self.record("apple.connect.begin")
                 try await self.session.connect(endpoint:endpoint)
+                self.record("apple.connect.returned")
             } catch {
+                let category: String
+                if error is CancellationError { category = "cancelled" }
+                else if let reason = error as? FoveatedStreamingSession.DisconnectReason { category = "apple." + Self.reasonName(reason) }
+                else if error is FocusControlClient.Failure { category = "control" }
+                else { category = "other" }
+                self.record("connect.error." + category, code:(error as NSError).code)
                 if !Task.isCancelled { self.validationError = Self.message(for:error) }
                 throw error
             }
@@ -95,17 +150,22 @@ final class XRFocusSession {
             guard let self else { return }
             // This cleanup task survives cancellation of connect. The host must
             // confirm its media owner is idle before automatic desktop return.
+            self.record("cleanup.begin")
             if client.connected {
                 do {
                     let result = try await client.request("focus.stop",parameters:["sessionId":NSNull(),"returnToDesktop":self.returnToDesktop],timeout:14)
                     self.stoppedCleanly = result["stopped"] as? Bool == true && result["desktopAllowed"] as? Bool == true
-                } catch { self.stoppedCleanly = false }
+                    self.record(self.stoppedCleanly ? "cleanup.hostRestored" : "cleanup.hostNotRestored")
+                } catch { self.stoppedCleanly = false; self.record("cleanup.hostStopFailed") }
             }
             client.onFailure = nil; client.close()
+            self.record("cleanup.apple.begin")
             await self.session.disconnect()
+            self.record("cleanup.apple.returned")
         },ended: { [weak self,weak model] in
             guard let self,let model else { return }
             self.control = nil; model.transitionPending = false
+            self.record("cleanup.ended")
             // Back may already have opened My Devices while cleanup awaited.
             guard model.destination != .devices else { return }
             model.destination = .desktop
@@ -122,13 +182,18 @@ final class XRFocusSession {
     }
 
     private static func message(for error:Error) -> String {
-        guard let failure = error as? FocusControlClient.Failure else { return "Could not start Focus. Try again." }
+        if let reason = error as? FoveatedStreamingSession.DisconnectReason {
+            if reason == .unauthorized { return "Immersive Mode was not authorized." }
+            if reason == .unavailable { return "Immersive Mode is unavailable on this PC." }
+            if reason == .endpointInitiatedDisconnect { return "The PC ended Immersive Mode." }
+        }
+        guard let failure = error as? FocusControlClient.Failure else { return "Could not start Immersive Mode. Try again." }
         switch failure {
         case .rejected("busy"): return "This PC is already in use."
-        case .rejected("permissionRequired"): return "Focus was not allowed on your PC."
-        case .rejected("unsupported"): return "Enable Focus in the Windows host."
+        case .rejected("permissionRequired"): return "Immersive Mode was not allowed on your PC."
+        case .rejected("unsupported"): return "Immersive Mode is unavailable on this PC."
         case .authentication: return "Could not verify this PC."
-        default: return "Could not start Focus. Check the Windows host."
+        default: return "Could not start Immersive Mode. Check the Windows host."
         }
     }
 
@@ -161,7 +226,7 @@ struct XRFocusSetup: View {
     @Environment(\.openImmersiveSpace) private var openSpace
     @Environment(\.dismissImmersiveSpace) private var closeSpace
     var body: some View {
-        Section("Focus validation") {
+        Section("Immersive Mode validation") {
             if let host = model.devices.selected {
                 Button("Use Selected PC") { model.xrFocus.address = host.address }
                     .disabled(model.xrFocus.gate.busy)
@@ -171,7 +236,7 @@ struct XRFocusSetup: View {
                 .disabled(model.xrFocus.gate.busy)
             TextField("Port", text: Binding(get: { model.xrFocus.port }, set: { model.xrFocus.port = $0 }))
                 .keyboardType(.numberPad).disabled(model.xrFocus.gate.busy)
-            Button(model.xrFocus.gate.busy ? "Cancel Focus" : "Connect in Focus") {
+            Button(model.xrFocus.gate.busy ? "Cancel Immersive Mode" : "Connect in Immersive Mode") {
                 if model.xrFocus.gate.busy { model.xrFocus.gate.stop() }
                 else { model.xrFocus.enter(model: model, open: openSpace, close: closeSpace) }
             }

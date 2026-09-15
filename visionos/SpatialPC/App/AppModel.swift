@@ -31,6 +31,9 @@ final class AppModel {
         #endif
     }
     func connectDesktop() {
+        #if canImport(FoveatedStreaming)
+        xrFocus.record(desktopConnectionAllowed ? "desktop.connectRequested" : "desktop.connectBlockedByCleanup")
+        #endif
         guard desktopConnectionAllowed else { return }
         error = nil
         stream.connect()
@@ -38,6 +41,7 @@ final class AppModel {
     func cancelDesktopRestoration() { reconnectOnForeground = false }
     func handleScenePhase(_ phase: ScenePhase) {
         #if canImport(FoveatedStreaming)
+        xrFocus.record(phase == .active ? "app.active" : phase == .background ? "app.background" : "app.inactive")
         applicationActive = phase == .active
         if phase == .background {
             let focusWasActive = xrFocus.gate.busy

@@ -44,7 +44,7 @@ struct DesktopNavigationButton: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openImmersiveSpace) private var openSpace
     @Environment(\.dismissImmersiveSpace) private var closeSpace
-    private var label: String { action == .back ? "Back to My Devices" : model.isImmersed ? "Return to Window" : "Enter Focus Mode" }
+    private var label: String { action == .back ? "Back to My Devices" : model.isImmersed ? "Return to Window" : "Enter Immersive Mode" }
     private var symbol: String { action == .back ? "chevron.left" : model.isImmersed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right" }
     var body: some View {
         Button { navigate() } label: {
@@ -99,7 +99,7 @@ struct DesktopNavigationButton: View {
                     dismissWindow(id:"controls")
                 case .error:
                     model.destination = .desktop
-                    model.error = "Could not open Focus Mode."
+                    model.error = "Could not open Immersive Mode."
                 case .userCancelled: model.destination = .desktop
                 @unknown default: model.destination = .desktop
                 }
