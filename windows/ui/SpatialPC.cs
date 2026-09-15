@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Principal;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,7 +32,8 @@ internal static class Program {
                 return;
             }
             if(!created) { activate.Set(); return; }
-            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),args.Contains("--xr-development"),args.Contains("--focus-control-development"));
+            bool focusDefault=DevelopmentDefaults.FocusEnabled(AppDomain.CurrentDomain.BaseDirectory);
+            var window=new HostWindow(args.Contains("--background"),args.Contains("--development"),focusDefault||args.Contains("--xr-development"),focusDefault||args.Contains("--focus-control-development"));
             var registration=ThreadPool.RegisterWaitForSingleObject(activate,(s,t)=>{
                 if(window.IsHandleCreated&&!window.IsDisposed)window.BeginInvoke(new Action(window.Reveal));
             },null,Timeout.Infinite,false);
@@ -40,5 +42,27 @@ internal static class Program {
             },null,Timeout.Infinite,false);
             try { Application.Run(window); } finally { registration.Unregister(null);quitRegistration.Unregister(null); }
         }
+    }
+}
+
+// Package-local development intent. Availability alone never enables access,
+// grants a device permission, opens a QR window, or starts a vendor process.
+internal static class DevelopmentDefaults {
+    internal static bool FocusEnabled(string root) {
+        try {
+            string path=Path.Combine(root,"development-defaults.json");
+            if(!File.Exists(path)||new FileInfo(path).Length>2048)return false;
+            var data=new JavaScriptSerializer{MaxJsonLength=2048,RecursionLimit=3}.Deserialize<Dictionary<string,object>>(File.ReadAllText(path));
+            if(data==null||data.Count!=3||!data.ContainsKey("version")||!(data["version"] is int)||(int)data["version"]!=1||
+               !data.ContainsKey("focusEnabled")||!(data["focusEnabled"] is bool)||!(bool)data["focusEnabled"]||
+               !data.ContainsKey("deploymentSha256")||!(data["deploymentSha256"] is string))return false;
+            string deployment=Path.Combine(root,"focus","deployment.json");
+            if(!File.Exists(deployment)||new FileInfo(deployment).Length>32768)return false;
+            using(var sha=SHA256.Create())using(var stream=File.OpenRead(deployment))
+                return String.Equals(BitConverter.ToString(sha.ComputeHash(stream)).Replace("-","").ToLowerInvariant(),(string)data["deploymentSha256"],StringComparison.Ordinal);
+        } catch(IOException) {return false;}
+          catch(UnauthorizedAccessException) {return false;}
+          catch(ArgumentException) {return false;}
+          catch(InvalidOperationException) {return false;}
     }
 }

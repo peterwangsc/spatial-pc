@@ -61,13 +61,17 @@ try {
     & (Join-Path $candidate 'runtime/python.exe') -I -B -c 'import pathlib,product.main,product.focus_control;from product.focus import FocusDeployment;p=pathlib.Path(product.main.__file__).resolve().parents[2];FocusDeployment(p,True).load()'
     if($LASTEXITCODE -ne 0){throw 'Assembled import/inventory validation failed'}
     Write-Output 'Reviewed module/import and deployment inventory PASS; no host started'
+    # This vendor-equipped development package exposes both Focus capabilities
+    # on ordinary shortcut/relaunch; the host still gates access and each session.
+    $defaults=[ordered]@{version=1;focusEnabled=$true;deploymentSha256=$DeploymentSha256}
+    [IO.File]::WriteAllText((Join-Path $candidate 'development-defaults.json'),($defaults|ConvertTo-Json),(New-Object Text.UTF8Encoding $false))
     $files=@(Get-ChildItem -LiteralPath $candidate -Recurse -File | Sort-Object FullName | ForEach-Object {
         [ordered]@{path=$_.FullName.Substring($candidate.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()}
     })
     $utf8=New-Object Text.UTF8Encoding $false
     $manifest=[ordered]@{product='Spatial PC';distribution='unsigned-internal-focus-integration';sourceCommit=$SourceCommit;workingTreeDirty=$false;
         nativeAndVendorBaseSource=$baseline.sourceCommit;nativeAndVendorBaseManifest=$BaseManifestSha256;deploymentSha256=$DeploymentSha256;
-        desktopDefault='mf';focusConfigured=$true;remoteFocusControlCompiled=$true;remoteFocusControlEnabledByDefault=$false;
+        desktopDefault='mf';focusConfigured=$true;remoteFocusControlCompiled=$true;remoteFocusControlEnabledByDefault=$true;
         installed=$false;files=$files}
     [IO.File]::WriteAllText((Join-Path $candidate 'bundle-manifest.json'),($manifest|ConvertTo-Json -Depth 6),$utf8)
     # The deployment and every reused native/vendor file must still match base.
@@ -77,7 +81,7 @@ try {
     $readiness=[ordered]@{utc=[DateTime]::UtcNow.ToString('o');candidate=$candidate;sourceCommit=$SourceCommit;fileCount=$files.Count;
         bytes=($files|ForEach-Object {$_['bytes']}|Measure-Object -Sum).Sum;manifestSha256=(Get-FileHash -LiteralPath (Join-Path $candidate 'bundle-manifest.json')).Hash.ToLowerInvariant();
         uiSha256=(Get-FileHash -LiteralPath (Join-Path $candidate 'SpatialPC.exe')).Hash.ToLowerInvariant();deploymentSha256=$DeploymentSha256;
-        launchArguments=@('--xr-development','--focus-control-development');controlPort=47994;appleLocalPort=55000;signalingPort=48322;
+        launchArguments=@();developmentDefaults=$true;controlPort=47994;appleLocalPort=55000;signalingPort=48322;
         listenerStarted=$false;installed=$false;identityAccessed=$false;firewallChanged=$false;mediaSecurity='development-only-unencrypted';consumerReady=$false}
     [IO.File]::WriteAllText(($candidate+'-readiness.json'),($readiness|ConvertTo-Json -Depth 5),$utf8)
     $readiness|ConvertTo-Json -Depth 5
