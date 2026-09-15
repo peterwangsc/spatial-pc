@@ -1,13 +1,13 @@
-# Paired PC to XR Focus — development flow
+# Paired PC to Immersive Mode
 
 The desktop remains the default connection. Its fullscreen
 button uses the saved PC's authenticated control endpoint, requests the explicit
-Windows Focus grant if needed, then stops desktop input/capture and prepares the
+Windows Immersive Mode grant if needed, then stops desktop input/capture and prepares the
 same host's Apple session. Windows presents its QR and visionOS owns scanning.
 The regular Settings page no longer needs an IP/port setup step. The prior
 manual fixture remains available only with the `--manual-focus` launch argument.
 
-Returning from either Focus control requests host cleanup and disconnects the
+Returning from either immersive control requests host cleanup and disconnects the
 Apple session. Automatic desktop reconnection requires an explicit Return and
 an acknowledged, eligible desktop listener. Control loss, failed cleanup and
 canceled setup leave an explicit reconnect action instead. No input or desktop
@@ -37,5 +37,24 @@ the returned Apple IP must match the authenticated numeric control endpoint.
   Windows desktop into XR content. Apple trust remains separate, and this
   development XR media path remains unencrypted.
 
-Keyboard and mouse bugs remain active work. This is development, not a release
-candidate or a production-launch readiness claim.
+Keyboard and mouse bugs remain active work.
+
+## Physical debugging, September 15
+
+Build 27 produced two distinct outcomes. One attempt crashed in Apple's checked
+continuation cancellation, reached from our terminal-status observer through
+`XRConnectionGate.stop()`. A later attempt completed QR authorization and received
+host media readiness, then returned an Apple disconnect error. The latter attempt
+cleaned up and the user confirmed desktop Reconnect worked.
+
+Build 28 addresses the cancellation path. A terminal status during connect no
+longer cancels that pending operation. The system connection runs in an owned,
+awaited task; explicit cancellation uses the SDK disconnect API. The gate retains
+ownership until connect and cleanup return, including a second disconnect for
+late success. A terminal status is checked again after connect returns. Nine
+lifecycle regressions pass; physical verification of this correction is pending.
+
+The post-readiness disconnect remains unresolved. Host runtime readiness and
+scene process creation do not establish successful OpenXR initialization or
+headset frames. Apple and Windows now keep bounded stage metadata so subsequent
+attempts can locate that failure without retaining credentials or desktop content.
