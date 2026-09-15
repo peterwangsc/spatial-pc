@@ -52,6 +52,12 @@ final class XRConnectionGate {
         return true
     }
 
+    /// During connect, the SDK owns completing its continuation. A terminal
+    /// status is reconciled by the awaited connect result, not task cancellation.
+    func sessionDisconnected() {
+        if phase == .connected { stop() }
+    }
+
     func stop() {
         guard busy else { return }
         phase = .stopping
@@ -74,5 +80,20 @@ final class XRConnectionGate {
             self.ended = nil; self.disconnect = nil
             ended?()
         }
+    }
+}
+
+/// Some system SDKs publish terminal status before their connect continuation
+/// finishes. Cancel through the SDK's disconnect API, never Task.cancel on the
+/// SDK operation. The caller retains this await until the operation really ends.
+@MainActor enum XRSystemConnection {
+    static func connect(while isAllowed: @escaping @MainActor () -> Bool,
+                        operation: @escaping @MainActor () async throws -> Void) async throws {
+        try Task.checkCancellation()
+        let pending = Task { @MainActor in
+            guard isAllowed() else { throw CancellationError() }
+            try await operation()
+        }
+        try await pending.value
     }
 }

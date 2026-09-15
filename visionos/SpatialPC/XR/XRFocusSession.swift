@@ -62,7 +62,7 @@ final class XRFocusSession {
         // Track only the framework status. Reading gate state inside the tracking
         // closure would also observe begin() and could cancel a fresh connection.
         switch status {
-        case .disconnected(let reason): record("apple.disconnected." + Self.reasonName(reason)); gate.stop()
+        case .disconnected(let reason): record("apple.disconnected." + Self.reasonName(reason)); gate.sessionDisconnected()
         case .initialized: record("apple.initialized")
         case .connecting: record("apple.connecting")
         case .connected: record("apple.connected")
@@ -142,7 +142,7 @@ final class XRFocusSession {
                 let endpoint = try self.endpoint(address:hostAddress,port:55000)
                 self.stage = "Scan the code on your PC"
                 self.record("apple.connect.begin")
-                try await self.session.connect(endpoint:endpoint)
+                try await self.connectSystem(endpoint:endpoint)
                 self.record("apple.connect.returned")
             } catch {
                 let category: String
@@ -183,6 +183,15 @@ final class XRFocusSession {
         })
     }
 
+    private func connectSystem(endpoint: FoveatedStreamingSession.Endpoint) async throws {
+        try await XRSystemConnection.connect(while: { [weak self] in self?.gate.phase == .connecting }) { [session] in
+            try await session.connect(endpoint:endpoint)
+        }
+        // A terminal notification can arrive before connect resumes. Do not
+        // mark the gate connected after ignoring that notification mid-connect.
+        if case .disconnected(let reason) = session.status { throw reason }
+    }
+
     private func endpoint(address:String,port:UInt16) throws -> FoveatedStreamingSession.Endpoint {
         guard let port = NWEndpoint.Port(rawValue:port) else { throw FocusControlClient.Failure.protocolViolation }
         if let ip = IPv4Address(address) { return .local(ipAddress:ip,port:port) }
@@ -218,7 +227,10 @@ final class XRFocusSession {
         model.stream.stopControl(); model.stream.disconnect()
         model.destination = .focus; model.transitionPending = true
         session.immersivePresentationBehaviors = .automatic(open,close)
-        gate.begin(timeout:.seconds(180),connect:{ [session] in try await session.connect(endpoint:endpoint) },
+        gate.begin(timeout:.seconds(180),connect:{ [weak self] in
+                       guard let self else { throw CancellationError() }
+                       try await self.connectSystem(endpoint:endpoint)
+                   },
                    disconnect:{ [session] in await session.disconnect() },ended:{ [weak self,weak model] in
             guard let self,let model else { return }
             model.transitionPending = false

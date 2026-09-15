@@ -3,6 +3,7 @@ import Foundation
 @testable import XRCore
 
 @MainActor private final class FakeSession {
+    var wasCancelledOnReturn = false
     var connectCalls = 0
     var disconnectCalls = 0
     var pending: CheckedContinuation<Void, Error>?
@@ -11,6 +12,7 @@ import Foundation
     func connect() async throws {
         connectCalls += 1
         try await withCheckedThrowingContinuation { pending = $0 }
+        wasCancelledOnReturn = Task.isCancelled
     }
     func disconnect() async {
         disconnectCalls += 1
@@ -93,6 +95,54 @@ import Foundation
         gate.stop(); session.fail()
         try await eventually { !gate.busy }
         #expect(endings == 2)
+    }
+
+    @Test func terminalStatusDuringConnectDoesNotCancelItsContinuation() async throws {
+        let gate = XRConnectionGate(), session = FakeSession()
+        var endings = 0
+        gate.begin(connect:session.connect,disconnect:session.disconnect,ended:{ endings += 1 })
+        try await eventually { session.pending != nil }
+        gate.sessionDisconnected()
+        for _ in 0..<10 { await Task.yield() }
+        #expect(gate.phase == .connecting && session.disconnectCalls == 0)
+        session.fail()
+        try await eventually { !gate.busy }
+        #expect(endings == 1 && session.disconnectCalls == 1)
+    }
+
+    @Test func explicitStopDisconnectsWithoutCancelingSystemConnect() async throws {
+        let gate = XRConnectionGate(), session = FakeSession()
+        var endings = 0
+        gate.begin(connect:{
+            try await XRSystemConnection.connect(while:{ gate.phase == .connecting },operation:session.connect)
+        },disconnect:session.disconnect,ended:{ endings += 1 })
+        try await eventually { session.pending != nil }
+        gate.stop()
+        try await eventually { session.disconnectCalls == 1 }
+        #expect(gate.busy && endings == 0)
+        session.complete()
+        try await eventually { !gate.busy }
+        #expect(!session.wasCancelledOnReturn)
+        #expect(session.disconnectCalls == 2 && endings == 1)
+    }
+
+    @Test func canceledAdmissionDoesNotStartSystemConnect() async throws {
+        let session = FakeSession()
+        do {
+            try await XRSystemConnection.connect(while:{ false },operation:session.connect)
+            Issue.record("Rejected system connection began")
+        } catch is CancellationError {} catch { Issue.record("Unexpected error") }
+        #expect(session.connectCalls == 0)
+    }
+
+    @Test func terminalStatusAfterConnectedCleansUp() async throws {
+        let gate = XRConnectionGate(), session = FakeSession()
+        gate.begin(connect:session.connect,disconnect:session.disconnect,ended:{})
+        try await eventually { session.pending != nil };session.complete()
+        try await eventually { gate.phase == .connected }
+        gate.sessionDisconnected()
+        try await eventually { !gate.busy }
+        #expect(session.disconnectCalls == 1)
     }
 
     @Test func timeoutRetainsBusyUntilOSCallReturns() async throws {
