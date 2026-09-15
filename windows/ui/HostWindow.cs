@@ -66,7 +66,7 @@ internal sealed class HostWindow : Form {
     }
     void BeginFocus(){if(focusStopping||focusActive||focusQrAllowed)return;if(focusGeneration!=null)retiredFocusGeneration=focusGeneration;focusGeneration=null;focusQrAllowed=true;view.StartFocus.Enabled=false;Send("startFocus");view.ShowSettings(false);Render();}
     void InvalidateFocus(){focusQrAllowed=false;focusStopping=true;view.StartFocus.Enabled=false;if(focusGeneration!=null||authorizedFocusGeneration!=null)retiredFocusGeneration=focusGeneration??authorizedFocusGeneration;authorizedFocusGeneration=null;ClearFocusQr();}
-    void StopFocus(){InvalidateFocus();Send("stopFocus");Render();}
+    void StopFocus(){InvalidateFocus();Send("stopFocus");Send("status");Render();}
     void CancelSensitive(){if(focusPermissionId!=null)FocusPermission(false);if(focusBitmap!=null||focusQrAllowed)StopFocus();if(pairingExpected){pairingExpected=false;Send("cancelPairing");ClearPairing();pending="cancel";}Render();}
     void Tick(){
         if(focusPermissionId!=null&&DateTime.UtcNow>=focusPermissionUntil)FocusPermission(false);

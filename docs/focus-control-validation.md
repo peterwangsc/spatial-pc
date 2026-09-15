@@ -52,7 +52,8 @@ cannot cancel a newer session.
 Windows validation: 97 Python tests run, 96 passed and one pre-existing native
 fixture test skipped because that optional fixture binary is absent from this
 isolated checkout. Release UI compilation passed. Offscreen wizard fixtures:
-68 assertions passed. No GPU/native-runtime fixture was rebuilt or run.
+82 assertions passed, including the later idle-health recovery regression from
+the wizard branch. No GPU/native-runtime fixture was rebuilt or run.
 
 The focused Python suite covers control framing/IDs, real ephemeral loopback
 TLS, enrolled/missing/revoked certificates, ALPN, two-connection admission,
