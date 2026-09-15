@@ -115,9 +115,7 @@ struct ControlCenter: View {
         NavigationStack {
             Form {
                 #if SPATIALPC_XR && canImport(FoveatedStreaming)
-                XRFocusSetup(model: model)
-                #elseif SPATIALPC_XR
-                Section("Focus validation") { Text("XR streaming requires Vision Pro hardware.") }
+                if ProcessInfo.processInfo.arguments.contains("--manual-focus") { XRFocusSetup(model: model) }
                 #endif
                 Section("Windows host") {
                     Link("peterwang.tech/spatial-pc",destination:URL(string:"https://peterwang.tech/spatial-pc")!)

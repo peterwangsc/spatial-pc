@@ -68,8 +68,12 @@ struct DesktopNavigationButton: View {
         Task { @MainActor in
             guard !model.transitionPending else { return }
             #if SPATIALPC_XR && canImport(FoveatedStreaming)
-            if action == .focus, !model.isImmersed, model.xrFocus.configured {
-                model.xrFocus.enter(model:model, open:openSpace, close:closeSpace)
+            if action == .focus, model.isImmersed, model.xrFocus.gate.busy {
+                model.xrFocus.stop(returnToDesktop:true)
+                return
+            }
+            if action == .focus, !model.isImmersed, model.devices.selected != nil {
+                model.xrFocus.enterPaired(model:model, open:openSpace, close:closeSpace)
                 return
             }
             if action == .back, model.xrFocus.gate.busy {

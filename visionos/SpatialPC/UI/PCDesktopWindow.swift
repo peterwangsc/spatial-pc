@@ -18,12 +18,13 @@ struct PCDesktopWindow: View {
             .opacity(model.stream.hasFrames ? 1 : 0)
             .background(.black)
             .overlay {
-                if !model.stream.hasFrames {
+                if !model.stream.hasFrames || focusOpening {
                     VStack(spacing:16) {
                         #if SPATIALPC_XR && canImport(FoveatedStreaming)
                         if model.xrFocus.gate.busy {
                             ProgressView()
-                            Button("Cancel Focus") { model.xrFocus.gate.stop() }
+                            Text(model.xrFocus.stage)
+                            Button("Cancel") { model.xrFocus.stop() }
                         } else {
                             desktopRecovery
                         }
@@ -49,7 +50,7 @@ struct PCDesktopWindow: View {
                 // Closing the desktop must not leave an empty immersive environment.
                 model.stream.stopControl()
                 #if SPATIALPC_XR && canImport(FoveatedStreaming)
-                if model.xrFocus.gate.busy {
+                if model.xrFocus.gate.busy && model.destination != .focus {
                     model.xrFocus.returnToDesktop = false
                     model.cancelDesktopRestoration()
                     model.xrFocus.gate.stop()
@@ -70,10 +71,17 @@ struct PCDesktopWindow: View {
                 }
             }
     }
+    private var focusOpening: Bool {
+        #if SPATIALPC_XR && canImport(FoveatedStreaming)
+        return model.xrFocus.gate.phase == .connecting || model.xrFocus.gate.phase == .stopping
+        #else
+        return false
+        #endif
+    }
     @ViewBuilder private var desktopRecovery: some View {
         if model.stream.active { ProgressView(); Text("Reconnecting to your PC…") }
         else {
-            Text(model.stream.userMessage ?? "Desktop disconnected")
+            Text(model.error ?? model.stream.userMessage ?? "Desktop disconnected")
             Button("Reconnect",systemImage:"arrow.clockwise") { model.connectDesktop() }
                 .disabled(!model.desktopConnectionAllowed)
         }

@@ -32,13 +32,14 @@ final class AppModel {
     }
     func connectDesktop() {
         guard desktopConnectionAllowed else { return }
+        error = nil
         stream.connect()
     }
     func cancelDesktopRestoration() { reconnectOnForeground = false }
     func handleScenePhase(_ phase: ScenePhase) {
         #if SPATIALPC_XR && canImport(FoveatedStreaming)
         applicationActive = phase == .active
-        if phase == .background { xrFocus.gate.stop() }
+        if phase == .background { xrFocus.stop() }
         #endif
         if phase != .active { stream.stopControl() }
         if phase == .background && !transitionPending {
