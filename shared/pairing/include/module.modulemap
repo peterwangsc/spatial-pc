@@ -1,0 +1,4 @@
+module SpatialPake {
+    header "spatial_pake.h"
+    export *
+}

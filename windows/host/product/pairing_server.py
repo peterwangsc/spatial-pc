@@ -4,7 +4,7 @@ import base64
 import time
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
-from .pairing_wire import PairingWindow, read_record, write_record, b64
+from .pairing_wire import PairingWindow, read_record, write_record, b64, MAX_ATTEMPTS
 from .tls_listener import listen
 
 
@@ -33,7 +33,7 @@ class PairingServer:
         if self.approval and not self.approval.done():self.approval.set_result(False)
 
     def handshake_failed(self):
-        self.window.failed_attempt()
+        self.window.failed_handshake()
         if not self.window.is_open():self.stop()
 
     def approve(self, request_id, accepted):
@@ -41,18 +41,18 @@ class PairingServer:
             self.approval.set_result(accepted is True)
 
     async def session(self, reader, writer):
-        claimed=False
+        claimed=False;attempt=None
         try:
             tls=writer.get_extra_info('ssl_object')
-            if tls.selected_alpn_protocol()!='spatialpc-pair/1':
+            if tls.selected_alpn_protocol()!='spatialpc-pair/2':
                 raise ValueError('Pairing protocol rejected')
-            challenge,nonce=self.window.challenge()
+            challenge,attempt=self.window.challenge()
             await write_record(writer,challenge)
             value=await read_record(reader)
-            key,name,server_proof=self.window.accept(value,nonce)
+            key,name,server_proof=self.window.accept(value,attempt)
             claimed=True
             self.approval=asyncio.get_running_loop().create_future()
-            await write_record(writer,dict(version=1,type='pending',serverProof=b64(server_proof)))
+            await write_record(writer,dict(version=2,type='pending',serverProof=b64(server_proof)))
             request_id=self.window.request_id
             self.notify(dict(event='approval',requestId=request_id,name=name,
                              expiresSeconds=max(0,int(self.window.approval_expires-time.monotonic()))))
@@ -67,7 +67,7 @@ class PairingServer:
                     raise ValueError('Pairing approval expired')
                 device=self.identity.enroll(key,name,allowed=lambda:not self.stopped.is_set() and self.window.can_commit(request_id))
                 # No awaits between the final expiry check and atomic persistence.
-                await write_record(writer,dict(version=1,type='paired',hostId=self.identity.state['hostId'],
+                await write_record(writer,dict(version=2,type='paired',hostId=self.identity.state['hostId'],
                     deviceId=device['id'],serverCertificate=b64(self.identity.server.public_bytes(serialization.Encoding.DER)),
                     clientCertificate=device['certificate'],caCertificate=b64(self.identity.ca.public_bytes(serialization.Encoding.DER)),
                     serverName=self.identity.state['serverName'],streamPort=self.stream_port))
@@ -75,9 +75,10 @@ class PairingServer:
             finally:
                 disconnected.cancel();await asyncio.gather(disconnected,return_exceptions=True)
         except (ValueError,InvalidSignature,TimeoutError,EOFError,OSError,asyncio.IncompleteReadError):
-            if not claimed:
-                self.window.failed_attempt()
-            self.notify(dict(event='pairingAttemptFailed',attemptsRemaining=max(0,5-self.window.failures)))
+            if not claimed and attempt is None:
+                self.window.failed_handshake()
+            self.notify(dict(event='pairingAttemptFailed',attemptsRemaining=max(0,MAX_ATTEMPTS-self.window.attempts)))
         finally:
+            self.window.release_attempt()
             if claimed or not self.window.is_open():
                 self.stop()

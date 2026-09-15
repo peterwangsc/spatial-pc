@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/google/boringssl.git",
+  "commit": "b780f192ce515ed8ed358f6c0947bd7acce438b9",
+  "primitive": "SPAKE2 Edwards25519 (BoringSSL variant)",
+  "assembly": false,
+  "upstreamTestsRequired": "SPAKE25519Test.*"
+}

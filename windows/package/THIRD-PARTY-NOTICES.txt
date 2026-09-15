@@ -31,5 +31,13 @@ notices. No restriction is imposed on replacing or debugging this LGPL component
 Windows Forms and .NET Framework are Windows platform components, not separately
 redistributed by this package. Windows 11 x64 is required.
 
+BoringSSL: Apache License 2.0, with Fiat Cryptography components under their
+included licenses. See licenses/boringssl/ and source/boringssl.lock.json for the
+exact upstream commit. Source: https://github.com/google/boringssl . Only the
+crypto library is statically linked into native/spatial_pake.dll; Windows and
+Python TLS implementations are unchanged. The same pinned SPAKE2 primitive is
+used on visionOS. This BoringSSL variant is not RFC 9382 wire compatible and is
+not a FIPS validation claim. Upstream API/ABI is unstable; updates require review.
+
 Installer technology: Inno Setup 6.7.3, copyright Jordan Russell and Martijn Laan.
 License and source: https://github.com/jrsoftware/issrc/tree/is-6_7_3 .

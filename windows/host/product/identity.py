@@ -122,7 +122,7 @@ class Identity:
         context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_3
         context.num_tickets = 0
         context.options |= ssl.OP_NO_TICKET
-        context.set_alpn_protocols(['spatialpc-pair/1' if pairing else 'spatialpc/1'])
+        context.set_alpn_protocols(['spatialpc-pair/2' if pairing else 'spatialpc/1'])
         context.verify_mode = ssl.CERT_NONE if pairing else ssl.CERT_REQUIRED
         context.load_verify_locations(cadata=self.state['caCertificate'])
         # OpenSSL's API takes filenames. Only an encrypted private key exists on
