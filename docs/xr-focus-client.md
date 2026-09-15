@@ -1,89 +1,60 @@
-# XR Focus integration — development configuration
+# Immersive Mode integration
 
-This adds Apple's Foveated Streaming path to the existing Spatial PC app target.
-It does not create another app, replace the installed build, or change the desktop
-stream protocol. The `XR` build configuration enables `SPATIALPC_XR` and requires
-visionOS 26.4. Debug, Lab and Release keep the existing Focus implementation.
+Spatial PC uses Apple’s Foveated Streaming framework in the same visionOS app
+that displays the windowed Windows desktop. XR is included in every standard
+build configuration, with visionOS 26.4 as the minimum. The legacy XR
+configuration remains an alias for existing build scripts.
 
-The first integration uses a plain PC-rendered OpenXR scene. It does not yet
-render the Windows desktop inside CloudXR or promise compatibility with VR games.
-The Windows host must finish its matching runtime integration before live use.
+A saved PC connects windowed by default. Its fullscreen control opens an
+authenticated control connection to the same host, obtains its Immersive Mode
+permission if needed, stops the desktop session, and prepares Apple’s session.
+The host presents Apple’s QR when requested. Desktop device pairing and Apple
+system pairing remain separate trust operations in the same user flow.
 
-## Development operation
+The first content is a plain PC-rendered OpenXR scene. It does not render the
+Windows desktop inside CloudXR or establish compatibility with arbitrary games.
 
-In the XR configuration, Settings contains a temporary Focus validation section
-with an explicit PC IP address and session-management port (default 55000).
-Use Selected PC copies only its address; system XR pairing remains separate.
-Connect in Focus allows testing without first launching desktop capture. Once
-configured, the desktop's existing expand button selects this XR path as well.
-This address entry is development tooling; the intended product selects the
-host's supported Focus path internally.
+## Connection ownership
 
-Entering XR stops the desktop input session and disconnects desktop streaming.
-Every app-owned desktop connection entrypoint is blocked while XR is connecting,
-connected or shutting down. Cancel remains reachable while connecting. A local
-Return control requests XR shutdown; desktop streaming resumes only after the
-session operations settle, when a desktop session was active before entry.
-An unexpected immersive dismissal also requests shutdown. Session-status
-observation belongs to the model rather than to a potentially closed window.
+The AppModel owns the session, control client, status observation, and cleanup.
+Only one media transition may be active. Explicit Return requests host cleanup;
+automatic desktop restoration requires an acknowledged, eligible desktop listener
+and completion of Apple disconnect. After an error, Reconnect restores desktop.
 
-The connection gate rejects overlapping attempts. A 180-second connection timeout
-requests cancellation and disconnect; it does not claim to forcibly cancel an OS
-operation. Reconnect stays blocked until outstanding system calls return. A late
-successful connect receives another disconnect before the gate becomes idle.
-Errors shown by this integration are fixed strings; no tokens, raw framework
-errors, tracking data, or streamed pixels are logged.
+The gate retains an outstanding system connection until it actually returns.
+The Apple SDK operation is shielded from parent-task cancellation; the SDK’s
+explicit disconnect operation requests shutdown. Terminal status during connect
+is reconciled after the awaited result, and late success is disconnected again.
+This avoids the checked-continuation cancellation path observed in build 27.
 
-## Build
+Bounded diagnostics record fixed stages, known Apple reason categories, numeric
+error codes, and a validated error-domain identifier. They do not retain QR,
+credentials, arbitrary error payloads, tracking data, or desktop content.
 
-Use the existing paired Apple build dependencies described in the project setup.
-Generate the project using the verified team and owned bundle identifier in your
-environment, then build the existing `SpatialPC` scheme with configuration `XR`.
-The only new entitlement is `com.apple.developer.foveated-streaming-session`.
-Signing may require updating the provisioning profile for that existing app ID.
+## Build and checks
+
+Use the project’s existing pairing build dependencies and set the verified team
+and owned bundle identifier in the environment before generating the project.
+The app needs `com.apple.developer.foveated-streaming-session` in its signed
+entitlements. Normal Debug and Release configurations include it.
 
 ```sh
 python3 scripts/generate_project.py
 xcodebuild -project visionos/SpatialPC.xcodeproj -scheme SpatialPC \
-  -configuration XR -sdk xros -destination 'generic/platform=visionOS' \
-  -derivedDataPath .local/xr-device build
-swift test -c release
+  -configuration Release -sdk xros -destination 'generic/platform=visionOS' \
+  -derivedDataPath .local/device build
+swift test --filter XRCoreTests
 ```
 
-Do not install an XR configuration over a user's current app during source review.
-Use a coordinated hardware phase and preserve the current app/data for regression.
+The simulator SDK cannot import FoveatedStreaming; the compile-time framework
+availability guard permits UI testing there. Actual XR streaming requires hardware.
+The explicit `--manual-focus` developer fixture remains available for isolated
+endpoint testing; ordinary setup does not expose or require it.
 
-## Validation and limits
-
-September 15, 2026: Xcode 26.5 / visionOS 26.5 SDK.
-
-- XR device compilation and development signing passed. App and provisioning
-  profile both contain the Foveated Streaming entitlement. Build 21 was signed;
-  the hardware-preparation follow-up allows three minutes for first-time system
-  pairing and adds Use Selected PC to avoid typing the address again.
-- Ordinary Release device compilation passed.
-- Existing 38 tests plus five new fake-session cancellation/race/timeout tests
-  passed. These do not invoke Foveated Streaming or prove its native cancellation.
-- The installed simulator SDK cannot import FoveatedStreaming. A compile-time
-  availability guard builds the existing app UI and explicitly marks XR streaming
-  hardware-only in the validation section. An initial simulator launch reached
-  the home UI but reported a Keychain load error; a local simulator signing
-  experiment subsequently failed to relaunch. Simulator UI acceptance is pending.
-  Neither attempt tests XR streaming, gaze, tracking or performance.
-- Read-only source review found and corrected overlapping desktop reconnect,
-  missing pre-immersion cancellation UI and lost deferred foreground restoration.
-
-No CloudXR media session, game, physical-headset input, foveation measurement,
-latency comparison or network protocol test was performed in this client pass.
-Native view-presentation cancellation, interruption, scene dismissal and return
-to the desktop still require physical validation with the exact Windows candidate.
-
-The framework's session-management/pairing path is distinct from Spatial PC's
-existing SPP2/mTLS pairing. No saved desktop credentials are exported or repurposed.
-Exact CloudXR media protection remains unresolved; this prototype does not inherit
-or advertise the existing desktop stream's encryption guarantee. Windows runtime
-signatures, redistribution permissions, and exact GPU/runtime support remain
-separate prerequisites. No proprietary CloudXR binaries are bundled here.
+See [the paired flow and current evidence](focus-client-development.md) for the
+transport checks, physical outcomes, and unresolved post-readiness disconnect.
+Apple’s system stream uses its own transport; desktop mTLS claims do not apply to
+CloudXR media. No proprietary CloudXR binaries are committed in this client tree.
 
 References: [Apple Foveated Streaming](https://developer.apple.com/documentation/foveatedstreaming),
-[NVIDIA's system-framework integration](https://docs.nvidia.com/cloudxr-sdk/latest/usr_guide/foveated_streaming/getting_started.html).
+[NVIDIA system integration](https://docs.nvidia.com/cloudxr-sdk/latest/usr_guide/foveated_streaming/getting_started.html).
